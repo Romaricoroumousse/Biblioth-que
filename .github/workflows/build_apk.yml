@@ -28,10 +28,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Générer l'arborescence Android v2 officielle
+      - name: Générer l'arborescence Android officielle
         run: |
+          cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml
           flutter create --platforms=android --org com.example .
-          sed -i '/<manifest xmlns:android/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
+          cp /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Récupérer les dépendances Flutter
         run: flutter pub get
