@@ -44,7 +44,7 @@ dependencies:
   intl: ^0.19.0
 
   # Détection de l'état du réseau (Offline/Online)
-  connectivity_plus: ^5.0.2
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

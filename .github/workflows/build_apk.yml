@@ -52,16 +52,16 @@ jobs:
                   with open(p, "w") as f:
                       f.write(c)
 
-          # Override subprojects compileSdk in root build.gradle.kts / build.gradle
+          # Override subprojects compileSdk in root build.gradle.kts / build.gradle via plugins.withId
           root_kts = "android/build.gradle.kts"
           if os.path.exists(root_kts):
               with open(root_kts, "a") as f:
-                  f.write("\nsubprojects { afterEvaluate { val a = extensions.findByName(\"android\"); if (a != null) { try { a.javaClass.getMethod(\"compileSdkVersion\", Int::class.javaPrimitiveType).invoke(a, 36) } catch (e: Exception) {} } } }\n")
+                  f.write("\nsubprojects { plugins.withId(\"com.android.library\") { val a = extensions.findByName(\"android\"); if (a != null) { try { a.javaClass.getMethod(\"compileSdkVersion\", Int::class.javaPrimitiveType).invoke(a, 36) } catch (e: Exception) {} } } }\n")
 
           root_g = "android/build.gradle"
           if os.path.exists(root_g):
               with open(root_g, "a") as f:
-                  f.write("\nsubprojects { afterEvaluate { p -> if (p.hasProperty(\"android\")) { p.android { compileSdkVersion 36 } } } }\n")
+                  f.write("\nsubprojects { plugins.withId(\"com.android.library\") { if (project.hasProperty(\"android\")) { project.android { compileSdkVersion 36 } } } }\n")
           '
           echo "=== local.properties ===" && cat android/local.properties
 
