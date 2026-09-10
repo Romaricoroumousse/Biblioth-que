@@ -34,20 +34,20 @@ jobs:
           flutter create --platforms=android --org com.example .
           cp /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-      - name: Mettre à jour compileSdk et targetSdk à 35
+      - name: Mettre à jour compileSdk et targetSdk à 36
         run: |
           echo "=== Fichiers build.gradle trouvés ==="
           find android/app -name "build.gradle*" | tee /tmp/gradle_files.txt
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
-            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 35/' android/app/build.gradle
-            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
-            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' android/app/build.gradle
+            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 36/' android/app/build.gradle
             echo "=== build.gradle (Groovy) apres patch ===" && grep -E 'compileSdk|targetSdk' android/app/build.gradle
           fi
           if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle.kts
-            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 35/' android/app/build.gradle.kts
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle.kts
             echo "=== build.gradle.kts (Kotlin DSL) apres patch ===" && grep -E 'compileSdk|targetSdk' android/app/build.gradle.kts
           fi
 
