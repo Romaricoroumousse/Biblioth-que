@@ -59,48 +59,11 @@ jobs:
           fi
 
           if [ -f android/build.gradle.kts ]; then
-            cat << 'EOF' >> android/build.gradle.kts
-
-subprojects {
-    val fixSdk = {
-        val a = extensions.findByName("android")
-        if (a != null) {
-            try {
-                a.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(a, 36)
-            } catch (e: Exception) {}
-        }
-    }
-    if (state.executed) {
-        fixSdk()
-    } else {
-        afterEvaluate {
-            fixSdk()
-        }
-    }
-}
-EOF
+            printf '\nsubprojects {\n    val fixSdk = {\n        val a = extensions.findByName("android")\n        if (a != null) {\n            try {\n                a.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(a, 36)\n            } catch (e: Exception) {}\n        }\n    }\n    if (state.executed) {\n        fixSdk()\n    } else {\n        afterEvaluate {\n            fixSdk()\n        }\n    }\n}\n' >> android/build.gradle.kts
           fi
 
           if [ -f android/build.gradle ]; then
-            cat << 'EOF' >> android/build.gradle
-
-subprojects {
-    def fixSdk = {
-        if (project.hasProperty("android")) {
-            project.android {
-                compileSdkVersion 36
-            }
-        }
-    }
-    if (project.state.executed) {
-        fixSdk()
-    } else {
-        project.afterEvaluate {
-            fixSdk()
-        }
-    }
-}
-EOF
+            printf '\nsubprojects {\n    def fixSdk = {\n        if (project.hasProperty("android")) {\n            project.android {\n                compileSdkVersion 36\n            }\n        }\n    }\n    if (project.state.executed) {\n        fixSdk()\n    } else {\n        project.afterEvaluate {\n            fixSdk()\n        }\n    }\n}\n' >> android/build.gradle
           fi
 
           echo "=== local.properties ===" && cat android/local.properties
