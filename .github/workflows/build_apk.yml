@@ -34,6 +34,14 @@ jobs:
           flutter create --platforms=android --org com.example .
           cp /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
+      - name: Mettre à jour compileSdk et targetSdk à 35
+        run: |
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
+          sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 35/' android/app/build.gradle
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
+          echo "=== build.gradle apres patch ===" && grep -E 'compileSdk|targetSdk' android/app/build.gradle
+
       - name: Récupérer les dépendances Flutter
         run: flutter pub get
 
