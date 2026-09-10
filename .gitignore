@@ -1,0 +1,25 @@
+# Fichiers locaux et bases de données de test
+*.db
+*.db-journal
+uploads/
+config.json
+__pycache__/
+*.pyc
+
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/app/build/
+
+# Système & Éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

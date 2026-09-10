@@ -1,0 +1,55 @@
+name: smart_pdf_library
+description: "Bibliothèque PDF Intelligente - Organisation automatique de documents par IA Groq."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icônes modernes
+  cupertino_icons: ^1.0.6
+
+  # Base de données locale & persistance
+  sqflite: ^2.3.2
+  path_provider: ^2.1.2
+  path: ^1.9.0
+
+  # Stockage sécurisé de la clé API Groq
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+
+  # Requêtes réseau HTTP vers l'API Groq
+  http: ^1.2.0
+
+  # Extraction et manipulation de texte PDF
+  syncfusion_flutter_pdf: ^24.2.7
+
+  # Permissions Android (Stockage / Gestion des fichiers)
+  permission_handler: ^11.3.0
+
+  # Sélection de dossiers et fichiers
+  file_picker: ^8.0.0
+
+  # Ouverture des PDF dans l'application native du smartphone
+  open_filex: ^4.4.0
+
+  # Hachage cryptographique (SHA-256 pour détection de doublons et d'invariants)
+  crypto: ^3.0.3
+
+  # Formatage de dates et internationalisation
+  intl: ^0.19.0
+
+  # Détection de l'état du réseau (Offline/Online)
+  connectivity_plus: ^5.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

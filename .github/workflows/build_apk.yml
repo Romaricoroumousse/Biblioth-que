@@ -1,0 +1,42 @@
+name: Compilation APK Android
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # Permet de lancer la compilation manuellement en 1 clic
+
+jobs:
+  build:
+    name: Compiler le fichier APK Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code source
+        uses: actions/checkout@v4
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Récupérer les dépendances Flutter
+        run: flutter pub get
+
+      - name: Compiler le fichier APK Release
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Mettre à disposition l'APK téléchargeable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bibliotheque-PDF-Release-APK
+          path: build/app/outputs/flutter-apk/app-release.apk

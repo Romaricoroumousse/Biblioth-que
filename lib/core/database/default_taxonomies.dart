@@ -1,0 +1,122 @@
+class DefaultTaxonomies {
+  static const Map<String, List<String>> domainsWithSubdomains = {
+    'Informatique': [
+      'Programmation',
+      'Algorithmique & Structures de données',
+      'Systèmes & Réseaux',
+      'Bases de données',
+      'Génie logiciel',
+      'Développement Web & Mobile',
+    ],
+    'Intelligence Artificielle': [
+      'Machine Learning',
+      'Deep Learning',
+      'Traitement du Langage Naturel (NLP)',
+      'Vision par Ordinateur',
+      'Systèmes Experts',
+    ],
+    'Data Science': [
+      'Analyse de données',
+      'Big Data',
+      'Visualisation de données',
+      'Business Intelligence',
+    ],
+    'Mathématiques': [
+      'Analyse',
+      'Algèbre',
+      'Géométrie',
+      'Probabilités',
+      'Mathématiques appliquées',
+    ],
+    'Statistiques': [
+      'Statistique descriptive',
+      'Statistique inférentielle',
+      'Séries temporelles',
+      'Biostatistique',
+    ],
+    'Cybersécurité': [
+      'Sécurité des réseaux',
+      'Cryptographie',
+      'Audit & Pentesting',
+      'Sécurité applicative',
+    ],
+    'Économie': [
+      'Microéconomie',
+      'Macroéconomie',
+      'Économétrie',
+      'Économie du développement',
+    ],
+    'Finance': [
+      'Marchés financiers',
+      'Gestion des risques',
+      'Finance quantitative',
+      'Finance d\'entreprise',
+    ],
+    'Comptabilité': [
+      'Comptabilité générale',
+      'Contrôle de gestion',
+      'Audit financier',
+      'Comptabilité analytique',
+    ],
+    'Gestion': [
+      'Management stratégique',
+      'Marketing',
+      'Gestion des Ressources Humaines',
+      'Logistique & Supply Chain',
+    ],
+    'Droit': [
+      'Droit civil',
+      'Droit des affaires',
+      'Droit pénal',
+      'Droit public & constitutionnel',
+      'Droit international',
+    ],
+    'Médecine': [
+      'Anatomie & Physiologie',
+      'Pharmacologie',
+      'Pathologie',
+      'Santé publique',
+      'Chirurgie',
+    ],
+    'Agriculture': [
+      'Agronomie',
+      'Agroéconomie & Assurance agricole',
+      'Élevage & Productions animales',
+      'Protection des végétaux',
+    ],
+    'Sciences Sociales': [
+      'Sociologie',
+      'Psychologie',
+      'Anthropologie',
+      'Sciences politiques',
+    ],
+    'Physique': [
+      'Mécanique classique & quantique',
+      'Électromagnétisme',
+      'Thermodynamique',
+      'Optique & Ondes',
+    ],
+    'Chimie': [
+      'Chimie organique',
+      'Chimie inorganique',
+      'Biochimie',
+      'Chimie analytique',
+    ],
+    'Éducation': [
+      'Pédagogie & Méthodes d\'apprentissage',
+      'Didactique des disciplines',
+      'Technologies éducatives',
+    ],
+    'Langues': [
+      'Linguistique & Phonétique',
+      'Grammaire & Syntaxe',
+      'Apprentissage des langues',
+    ],
+    'Littérature': [
+      'Romans & Nouvelles',
+      'Poésie',
+      'Théâtre',
+      'Essais & Critiques',
+    ],
+  };
+}
