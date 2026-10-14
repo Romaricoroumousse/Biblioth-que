@@ -1,6 +1,9 @@
-import urllib.request, json, zipfile, io, os, shutil
+import urllib.request, json, zipfile, io, os, shutil, sys
 
-# Lecture sécurisée du jeton GitHub (depuis l'environnement ou github_token.txt local ignoré par git)
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+# Lecture sécurisée du jeton GitHub
 TOKEN = os.environ.get('GITHUB_TOKEN', '')
 token_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'github_token.txt')
 if not TOKEN and os.path.exists(token_file):
@@ -17,9 +20,16 @@ HEADERS = {
     'Accept': 'application/vnd.github.v3+json'
 }
 
-print('🔍 Recherche du dernier artefact APK compilé sur GitHub Actions...')
+class NoAuthRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Supprime l'en-tête Authorization lors de la redirection vers Azure Blob pour éviter le 401."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req and 'Authorization' in new_req.headers:
+            del new_req.headers['Authorization']
+        return new_req
 
-# 1. Obtenir les artefacts récents
+print('[INFO] Recherche du dernier artefact APK compile sur GitHub Actions...')
+
 artifacts_url = f'https://api.github.com/repos/{REPO}/actions/artifacts?per_page=5'
 req = urllib.request.Request(artifacts_url, headers=HEADERS)
 
@@ -29,19 +39,20 @@ try:
         artifacts = data.get('artifacts', [])
         
     if not artifacts:
-        print('❌ Aucun artefact trouvé.')
+        print('[ERREUR] Aucun artefact trouve.')
         exit(1)
 
-    # Prendre le premier (le plus récent)
     latest = artifacts[0]
     artifact_id = latest['id']
     artifact_name = latest['name']
-    print(f'📦 Artefact détecté : {artifact_name} (ID: {artifact_id})')
+    print(f'[INFO] Artefact detecte : {artifact_name} (ID: {artifact_id})')
 
-    download_url = latest['archive_download_url']
-    print('⬇️ Téléchargement en cours...')
+    download_url = f'https://api.github.com/repos/{REPO}/actions/artifacts/{artifact_id}/zip'
+    print('[INFO] Telechargement de l\'APK en cours...')
+    
+    opener = urllib.request.build_opener(NoAuthRedirectHandler)
     dl_req = urllib.request.Request(download_url, headers=HEADERS)
-    with urllib.request.urlopen(dl_req) as dl_resp:
+    with opener.open(dl_req) as dl_resp:
         zip_data = dl_resp.read()
 
     out_dir = r'C:/Users/_APIAS/Downloads/Bibliotheque-APK'
@@ -49,14 +60,17 @@ try:
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(local_dir, exist_ok=True)
 
-    print('📂 Extraction du fichier APK...')
+    print(f'[INFO] Archive recue ({len(zip_data)} octets). Extraction...')
     with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
         z.extractall(out_dir)
         z.extractall(local_dir)
 
-    print(f'✅ SUCCÈS ! APK disponible dans :')
-    print(f'  -> {out_dir}')
-    print(f'  -> {local_dir}/app-release.apk')
+    print('\n=============================================================')
+    print(' [SUCCES] NOUVEL APK DISPONIBLE ET PRET POUR INSTALLATION !')
+    print('=============================================================')
+    print(f'1. Dossier Telechargements : {out_dir}\\app-release.apk')
+    print(f'2. Dossier Projet           : {local_dir}\\app-release.apk')
+    print('Vous pouvez l\'installer directement sur votre smartphone Android.')
 
 except Exception as e:
-    print(f'❌ Erreur lors du téléchargement : {e}')
+    print(f'[ERREUR] Erreur lors du telechargement : {e}')
