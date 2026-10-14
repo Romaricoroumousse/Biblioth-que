@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/network/groq_api_client.dart';
+import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
+import '../../../core/widgets/app_logo.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onFinished;
@@ -17,8 +18,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // Étape 1 : Clé Groq
+  // Étape 1 : Fournisseur et Clé IA (Optionnel)
   final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _endpointController = TextEditingController();
+  String _selectedProvider = AppConstants.providerGroq;
   bool _isTestingKey = false;
   String? _keyTestMessage;
   bool _isKeyValid = false;
@@ -33,14 +36,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void dispose() {
     _pageController.dispose();
     _apiKeyController.dispose();
+    _endpointController.dispose();
     super.dispose();
+  }
+
+  void _onKeyChanged(String val) {
+    final detected = UnifiedAiClient.detectProviderFromKey(val);
+    if (detected != _selectedProvider && val.length >= 4) {
+      setState(() {
+        _selectedProvider = detected;
+      });
+    }
   }
 
   Future<void> _testAndSaveApiKey() async {
     final key = _apiKeyController.text.trim();
-    if (key.isEmpty) {
+    if (key.isEmpty && _selectedProvider != AppConstants.providerCustom) {
       setState(() {
-        _keyTestMessage = 'Veuillez saisir votre clé API Groq.';
+        _keyTestMessage = 'Veuillez saisir votre clé API.';
         _isKeyValid = false;
       });
       return;
@@ -51,32 +64,51 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _keyTestMessage = null;
     });
 
-    final valid = await GroqApiClient.instance.testApiKey(key);
+    final res = await UnifiedAiClient.instance.testApiKey(
+      provider: _selectedProvider,
+      apiKey: key,
+      customEndpoint: _endpointController.text.trim(),
+    );
 
     if (!mounted) return;
 
     setState(() {
       _isTestingKey = false;
-      _isKeyValid = valid;
-      _keyTestMessage = valid
-          ? 'Connexion réussie avec Groq !'
-          : 'Clé invalide ou problème de connexion.';
+      _isKeyValid = res.isValid;
+      _keyTestMessage = res.message;
     });
 
-    if (valid) {
-      await SecureStorageService.instance.setGroqApiKey(key);
+    if (res.isValid) {
+      await SecureStorageService.instance.setActiveProvider(_selectedProvider);
+      await SecureStorageService.instance.setApiKey(key, provider: _selectedProvider);
+      if (_selectedProvider == AppConstants.providerCustom) {
+        await SecureStorageService.instance.setCustomEndpoint(_endpointController.text.trim());
+      }
     }
   }
 
+  Future<void> _saveAndNextPage() async {
+    final key = _apiKeyController.text.trim();
+    if (key.isNotEmpty) {
+      await SecureStorageService.instance.setActiveProvider(_selectedProvider);
+      await SecureStorageService.instance.setApiKey(key, provider: _selectedProvider);
+      if (_selectedProvider == AppConstants.providerCustom) {
+        await SecureStorageService.instance.setCustomEndpoint(_endpointController.text.trim());
+      }
+    }
+    _pageController.nextPage(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   Future<void> _requestStoragePermission() async {
-    // Demander la permission de gestion de stockage sur Android 11+
     PermissionStatus status;
     if (await Permission.manageExternalStorage.isGranted) {
       status = PermissionStatus.granted;
     } else {
       status = await Permission.manageExternalStorage.request();
       if (!status.isGranted) {
-        // Fallback vers les permissions classiques de stockage
         status = await Permission.storage.request();
       }
     }
@@ -90,7 +122,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (!status.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('L\'autorisation est nécessaire pour repérer les PDF sur votre appareil.'),
+          content: Text('L\'autorisation est nécessaire pour détecter les PDF de votre appareil.'),
         ),
       );
     }
@@ -117,15 +149,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Barre de progression des étapes
+            // Barre supérieure avec logo
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              child: Row(
+                children: [
+                  const AppLogo(size: 32),
+                  const SizedBox(width: 10),
+                  Text(
+                    AppConstants.appName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_currentPage + 1} / 3',
+                    style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+
+            // Barre de progression
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Row(
                 children: List.generate(3, (index) {
                   return Expanded(
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 4),
-                      height: 6,
+                      height: 5,
                       decoration: BoxDecoration(
                         color: index <= _currentPage
                             ? Theme.of(context).colorScheme.primary
@@ -138,7 +190,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
 
-            // Contenu des 3 étapes
+            // Contenu
             Expanded(
               child: PageView(
                 controller: _pageController,
@@ -161,48 +213,78 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  // ==================== ÉTAPE 1 : CLÉ API GROQ ====================
+  // ==================== ÉTAPE 1 : CLÉ API MULTI-IA ====================
   Widget _buildStep1ApiKey() {
+    final currentProviderInfo = AppConstants.supportedProviders.firstWhere(
+      (p) => p.id == _selectedProvider,
+      orElse: () => AppConstants.supportedProviders.first,
+    );
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.vpn_key_rounded, color: Colors.blue, size: 36),
+          const Center(
+            child: AppLogo(size: 64, showText: false),
           ),
           const SizedBox(height: 16),
           const Text(
-            'Étape 1 sur 3',
-            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+            'Étape 1 sur 3 (Optionnelle)',
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600, fontSize: 13),
           ),
           const SizedBox(height: 4),
           const Text(
-            'Configuration de l\'API Groq',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            'Fournisseur d\'IA & Clé API',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           const Text(
-            'Pour analyser et classer vos documents PDF à très grande vitesse, l\'application utilise les modèles IA hébergés sur Groq. Votre clé est stockée de manière chiffrée sur votre téléphone.',
-            style: TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+            'L\'application prend en charge n\'importe quelle IA (Groq, Google Gemini, OpenAI ChatGPT, DeepSeek, Mistral, OpenRouter ou Ollama local).',
+            style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+
+          // Sélecteur de fournisseur
+          DropdownButtonFormField<String>(
+            value: _selectedProvider,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Choisissez votre IA',
+              prefixIcon: const Icon(Icons.psychology),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            items: AppConstants.supportedProviders.map((p) {
+              return DropdownMenuItem<String>(
+                value: p.id,
+                child: Text(p.name, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedProvider = val;
+                  _keyTestMessage = null;
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // Saisie de clé
           TextField(
             controller: _apiKeyController,
             obscureText: true,
+            onChanged: _onKeyChanged,
             decoration: InputDecoration(
-              labelText: 'Clé API Groq (gsk_...)',
+              labelText: 'Clé API (${currentProviderInfo.keyHint})',
               hintText: 'Collez votre clé ici',
-              prefixIcon: const Icon(Icons.key),
+              prefixIcon: const Icon(Icons.vpn_key_rounded),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               suffixIcon: _isTestingKey
                   ? const Padding(
                       padding: EdgeInsets.all(12),
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                     )
                   : IconButton(
                       icon: const Icon(Icons.check_circle_outline),
@@ -211,13 +293,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 12),
-          if (_keyTestMessage != null)
+
+          if (currentProviderInfo.isCustom) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _endpointController,
+              decoration: InputDecoration(
+                labelText: 'URL de l\'API compatible OpenAI',
+                hintText: 'http://localhost:11434/v1/chat/completions',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+
+          if (_keyTestMessage != null) ...[
+            const SizedBox(height: 10),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  _isKeyValid ? Icons.check_circle : Icons.error,
-                  color: _isKeyValid ? Colors.green : Colors.red,
+                  _isKeyValid ? Icons.check_circle : Icons.info_outline,
+                  color: _isKeyValid ? Colors.green : Colors.orange.shade800,
                   size: 18,
                 ),
                 const SizedBox(width: 8),
@@ -225,22 +322,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Text(
                     _keyTestMessage!,
                     style: TextStyle(
-                      color: _isKeyValid ? Colors.green.shade700 : Colors.red.shade700,
+                      color: _isKeyValid ? Colors.green.shade700 : Colors.orange.shade900,
                       fontWeight: FontWeight.w500,
+                      fontSize: 12.5,
                     ),
                   ),
                 ),
               ],
             ),
-          const SizedBox(height: 20),
+          ],
+
+          const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: _isTestingKey ? null : _testAndSaveApiKey,
-            icon: const Icon(Icons.speed),
-            label: const Text('Tester et enregistrer la clé'),
+            icon: const Icon(Icons.speed, size: 18),
+            label: const Text('Tester la clé'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(42),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
           ),
-          const SizedBox(height: 32),
+
+          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.amber.shade50,
               borderRadius: BorderRadius.circular(12),
@@ -249,28 +354,40 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: Colors.amber, size: 22),
+                Icon(Icons.lightbulb_outline, color: Colors.amber, size: 20),
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Vous pouvez générer gratuitement votre clé API sur console.groq.com. Elle reste strictement confidentielle sur votre mobile.',
+                    'Vous pouvez passer cette étape dès maintenant ! Vous pourrez renseigner votre clé avant de lancer le scan ou dans les paramètres.',
                     style: TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 40),
+
+          const SizedBox(height: 28),
+
+          // Boutons d'action
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isKeyValid
-                  ? () => _pageController.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      )
-                  : null,
-              child: const Text('Continuer'),
+              onPressed: _saveAndNextPage,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Continuer', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: () => _pageController.nextPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              ),
+              child: const Text('Passer cette étape (Configurer plus tard)', style: TextStyle(color: Colors.grey)),
             ),
           ),
         ],
@@ -310,6 +427,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 24),
           Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -321,7 +439,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       const Expanded(
                         child: Text(
                           'Rechercher les fichiers PDF (Téléchargements, WhatsApp, Documents...)',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),
                       Icon(
@@ -338,7 +456,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       const Expanded(
                         child: Text(
                           'Lire les premières pages pour extraire le sujet et générer le résumé',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),
                       Icon(
@@ -360,9 +478,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               label: Text(_storagePermissionGranted
                   ? 'Autorisations accordées'
                   : 'Accorder l\'accès aux fichiers'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
           Row(
             children: [
               Expanded(
@@ -383,6 +505,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             curve: Curves.easeInOut,
                           )
                       : null,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   child: const Text('Continuer'),
                 ),
               ),
@@ -420,7 +546,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Avant d\'initialiser votre bibliothèque, veuillez prendre connaissance des règles de protection de vos données :',
+            'Avant d\'initialiser votre bibliothèque, prenez connaissance des règles de protection de vos données :',
             style: TextStyle(fontSize: 14, color: Colors.black87),
           ),
           const SizedBox(height: 16),
@@ -430,7 +556,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           _buildPrivacyBullet(
             icon: Icons.short_text,
-            text: 'Seul le texte des 3 premières pages est transmis à Groq pour classification.',
+            text: 'Seul le texte des 3 premières pages est envoyé au modèle IA pour classification.',
           ),
           _buildPrivacyBullet(
             icon: Icons.cached,
@@ -438,7 +564,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           _buildPrivacyBullet(
             icon: Icons.shield_outlined,
-            text: 'Vous gardez le contrôle : vous pouvez exclure tout document sensible de l\'analyse IA.',
+            text: 'Vous gardez le contrôle total : possibilité de scanner sans IA à 100% hors-ligne.',
           ),
           const SizedBox(height: 24),
           CheckboxListTile(
@@ -471,6 +597,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: _privacyConsentChecked ? _finishOnboarding : null,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   child: const Text('Commencer'),
                 ),
               ),

@@ -9,11 +9,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SecureStorageService.instance.init();
 
+  // L'application s'ouvre même sans clé API !
   final bool onboardingDone = await SecureStorageService.instance.isOnboardingCompleted();
-  final bool hasKey = await SecureStorageService.instance.hasGroqApiKey();
-  final bool isReady = onboardingDone && hasKey;
 
-  runApp(SmartPdfLibraryApp(initialReady: isReady));
+  runApp(SmartPdfLibraryApp(initialReady: onboardingDone));
 }
 
 class SmartPdfLibraryApp extends StatefulWidget {

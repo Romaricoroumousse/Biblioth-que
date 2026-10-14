@@ -19,7 +19,9 @@ build/
 **/android/app/build/
 
 # Système & Éditeurs
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# Fichiers binaires et secrets
+*.apk
+Bibliotheque/
+github_token.txt
+
+

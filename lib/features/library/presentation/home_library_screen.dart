@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/storage/secure_storage_service.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../models/document_model.dart';
 import '../../../models/domain_model.dart';
+import '../../scanner/presentation/pre_scan_config_dialog.dart';
 import '../../scanner/presentation/scan_dialog.dart';
 import '../../search/presentation/smart_search_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
@@ -55,6 +58,23 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
     });
   }
 
+  /// Déclenche le scan : si aucune clé n'est configurée, ouvre d'abord la boîte de dialogue de choix/configuration
+  Future<void> _handleScanRequest() async {
+    final hasKey = await SecureStorageService.instance.hasApiKey();
+
+    if (!hasKey) {
+      if (!mounted) return;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => const PreScanConfigDialog(),
+      );
+
+      if (proceed != true) return;
+    }
+
+    _triggerScanDialog();
+  }
+
   void _triggerScanDialog() {
     showDialog(
       context: context,
@@ -81,11 +101,11 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Icons.auto_stories, color: Color(0xFF1E3A8A)),
-            SizedBox(width: 8),
+            AppLogo(size: 32),
+            SizedBox(width: 10),
             Text(
               'Ma Bibliothèque',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],
         ),
@@ -102,7 +122,7 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Paramètres',
+            tooltip: 'Paramètres & IA',
             onPressed: () async {
               await Navigator.push(
                 context,
@@ -138,7 +158,7 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
               ),
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _triggerScanDialog,
+        onPressed: _handleScanRequest,
         icon: const Icon(Icons.sync),
         label: const Text('Scanner les PDF'),
       ),
@@ -147,7 +167,6 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
 
   // ==================== ONGLET 1 : DOMAINES ====================
   Widget _buildDomainsTab() {
-    // Filtrer les domaines qui ont au moins 1 document, ou afficher les principaux
     final activeDomains = _domains.where((d) => d.documentCount > 0).toList();
 
     if (activeDomains.isEmpty) {
@@ -157,23 +176,27 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen> with SingleTicker
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.folder_copy_outlined, size: 72, color: Colors.grey.shade400),
-              const SizedBox(height: 16),
+              const AppLogo(size: 80),
+              const SizedBox(height: 20),
               const Text(
                 'Votre bibliothèque est vide',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
-                'Lancez le premier scan pour détecter et classer automatiquement les PDF de votre téléphone avec Groq IA.',
+                'Lancez la détection de vos PDF pour les ranger et les classifier automatiquement (avec ou sans IA).',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade600, height: 1.4),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: _triggerScanDialog,
+                onPressed: _handleScanRequest,
                 icon: const Icon(Icons.sync),
-                label: const Text('Lancer le premier scan'),
+                label: const Text('Lancer le scan de vos PDF'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ],
           ),

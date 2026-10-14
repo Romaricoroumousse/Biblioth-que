@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/storage/secure_storage_service.dart';
+import '../../scanner/presentation/pre_scan_config_dialog.dart';
 import '../../../models/document_model.dart';
 import '../../../services/ai_classification_service.dart';
 
@@ -90,6 +92,16 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   }
 
   Future<void> _reanalyzeWithAi() async {
+    final hasKey = await SecureStorageService.instance.hasApiKey();
+    if (!hasKey) {
+      if (!mounted) return;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => const PreScanConfigDialog(),
+      );
+      if (proceed != true) return;
+    }
+
     setState(() {
       _isReanalyzing = true;
     });
@@ -104,14 +116,16 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
       if (!mounted) return;
 
+      final providerName = await SecureStorageService.instance.getActiveProviderName();
+
       setState(() {
         _doc = newDoc;
         _isReanalyzing = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Document réanalysé avec succès par Groq !'),
+        SnackBar(
+          content: Text('Document réanalysé avec succès par $providerName !'),
           backgroundColor: Colors.green,
         ),
       );
@@ -252,7 +266,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text('Réanalyse avec le modèle Groq en cours...'),
+                  Text('Réanalyse avec l\'IA en cours...'),
                 ],
               ),
             )

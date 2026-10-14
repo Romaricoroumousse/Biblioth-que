@@ -28,9 +28,53 @@ CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+AI_PROVIDERS = {
+    "groq": {
+        "name": "Groq",
+        "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+        "default_model": "llama-3.3-70b-versatile",
+        "fast_model": "llama-3.1-8b-instant"
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "default_model": "gemini-1.5-flash",
+        "fast_model": "gemini-1.5-flash"
+    },
+    "openai": {
+        "name": "OpenAI",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "default_model": "gpt-4o-mini",
+        "fast_model": "gpt-4o-mini"
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "endpoint": "https://api.deepseek.com/chat/completions",
+        "default_model": "deepseek-chat",
+        "fast_model": "deepseek-chat"
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "endpoint": "https://api.mistral.ai/v1/chat/completions",
+        "default_model": "mistral-small-latest",
+        "fast_model": "mistral-small-latest"
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "default_model": "google/gemini-2.0-flash-exp:free",
+        "fast_model": "google/gemini-2.0-flash-exp:free"
+    },
+    "custom": {
+        "name": "Personnalisé",
+        "endpoint": "http://localhost:11434/v1/chat/completions",
+        "default_model": "llama3",
+        "fast_model": "llama3"
+    }
+}
+
+DEFAULT_PROVIDER = "groq"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
-FAST_MODEL = "llama-3.1-8b-instant"
 
 # ==================== CONFIGURATION ====================
 
@@ -42,8 +86,11 @@ def load_config():
         except Exception:
             pass
     return {
+        "provider": DEFAULT_PROVIDER,
+        "api_key": os.environ.get("AI_API_KEY", "") or os.environ.get("GROQ_API_KEY", ""),
         "groq_api_key": os.environ.get("GROQ_API_KEY", ""),
         "model": DEFAULT_MODEL,
+        "custom_endpoint": "",
         "scan_page_count": 3,
         "privacy_accepted": False
     }
@@ -187,12 +234,25 @@ def extract_pdf_info(filepath: str, max_pages: int = 3):
         print(f"Erreur extraction {filepath}: {e}")
         return "", 0
 
-def call_groq(api_key: str, filename: str, text: str, model: str = DEFAULT_MODEL):
+
+def detect_provider(key: str) -> str:
+    k = key.strip()
+    if k.startswith('gsk_'): return 'groq'
+    if k.startswith('AIza'): return 'gemini'
+    if k.startswith('sk-or-'): return 'openrouter'
+    if k.startswith('sk-'): return 'openai'
+    return 'groq'
+
+def call_ai(api_key: str, filename: str, text: str, provider: str = "groq", model: str = None, custom_endpoint: str = None):
+    p_info = AI_PROVIDERS.get(provider, AI_PROVIDERS["groq"])
+    endpoint = custom_endpoint if (provider == "custom" and custom_endpoint) else p_info["endpoint"]
+    chosen_model = model or p_info["default_model"]
+
     system_prompt = """Tu es un documentaliste universitaire et scientifique expert.
 Analyse le nom du document et le texte des premières pages pour le cataloguer avec précision.
 Tu DOIS répondre STRICTEMENT avec cet objet JSON valide :
 {
-  "domaine": "Domaine principal (ex: Mathématiques, Statistiques, Informatique, Économie, Finance, Droit, Médecine, Sciences Sociales...)",
+  "domaine": "Domaine principal (ex: Mathématiques, Statistiques, Informatique, Économie, Finance, Droit, Médecine, Sciences Sociales, Documents & Cours...)",
   "sous_domaine": "Sous-domaine précis",
   "resume": "Résumé clair et synthétique en 2 ou 3 phrases du contenu",
   "mots_cles": ["mot1", "mot2", "mot3", "mot4", "mot5"],
@@ -204,22 +264,27 @@ Ne fournis AUCUN texte en dehors du JSON."""
     user_prompt = f"Nom du fichier : \"{filename}\"\n\nExtrait des premières pages :\n\"\"\"\n{text}\n\"\"\""
 
     payload = {
-        "model": model,
+        "model": chosen_model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"}
+        "temperature": 0.1
     }
+    if provider in ["groq", "openai"]:
+        payload["response_format"] = {"type": "json_object"}
+
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "SmartPdfLibrary/1.0"
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
 
     req = urllib.request.Request(
-        GROQ_API_URL,
+        endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key.strip()}",
-            "Content-Type": "application/json; charset=utf-8"
-        },
+        headers=headers,
         method="POST"
     )
 
@@ -227,10 +292,21 @@ Ne fournis AUCUN texte en dehors du JSON."""
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
+            cleaned = content.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            elif cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            return json.loads(cleaned.strip())
     except Exception as e:
-        print(f"Erreur Groq: {e}")
+        print(f"Erreur IA ({provider}): {e}")
         return None
+
+def call_groq(api_key: str, filename: str, text: str, model: str = DEFAULT_MODEL):
+    return call_ai(api_key, filename, text, provider="groq", model=model)
+
 
 def process_file_into_db(fpath):
     conn = get_db()
@@ -247,21 +323,25 @@ def process_file_into_db(fpath):
         return "already_indexed"
 
     cfg = load_config()
-    api_key = cfg.get("groq_api_key", "")
-    model = cfg.get("model", DEFAULT_MODEL)
+    provider = cfg.get("provider", "groq")
+    api_key = request.headers.get('X-Ai-Api-Key') or request.headers.get('X-Groq-Api-Key') or cfg.get('api_key') or cfg.get('groq_api_key', '')
+    if api_key and not cfg.get("provider"):
+        provider = detect_provider(api_key)
+    model = cfg.get("model") or AI_PROVIDERS.get(provider, {}).get("default_model", DEFAULT_MODEL)
+    custom_endpoint = cfg.get("custom_endpoint", "")
     max_pages = cfg.get("scan_page_count", 3)
 
     text, pages = extract_pdf_info(fpath, max_pages=max_pages)
 
     ai_data = None
     if api_key:
-        ai_data = call_groq(api_key, fname, text, model=model)
+        ai_data = call_ai(api_key, fname, text, provider=provider, model=model, custom_endpoint=custom_endpoint)
 
     if not ai_data:
         ai_data = {
             "domaine": "Documents & Cours" if ("cours" in fname.lower() or "questionnaire" in fname.lower()) else "Général",
             "sous_domaine": "Pédagogie & TP" if "tp" in fname.lower() else "Général",
-            "resume": f"Document PDF de {pages} pages ({fname}). Analyse IA complète disponible dès que votre clé Groq est configurée.",
+            "resume": f"Document PDF de {pages} pages ({fname}). Analyse IA complète disponible dès que votre clé IA est configurée.",
             "mots_cles": ["pdf", "document", fname.replace(".pdf", "").replace("_", " ")],
             "langue": "français",
             "niveau": "intermédiaire"
@@ -336,10 +416,18 @@ def api_config():
     if request.method == 'POST':
         data = request.json or {}
         cfg = load_config()
-        if 'groq_api_key' in data:
+        if 'provider' in data:
+            cfg['provider'] = data['provider'].strip()
+        if 'api_key' in data:
+            cfg['api_key'] = data['api_key'].strip()
+            cfg['groq_api_key'] = data['api_key'].strip()
+        elif 'groq_api_key' in data:
+            cfg['api_key'] = data['groq_api_key'].strip()
             cfg['groq_api_key'] = data['groq_api_key'].strip()
         if 'model' in data:
             cfg['model'] = data['model']
+        if 'custom_endpoint' in data:
+            cfg['custom_endpoint'] = data['custom_endpoint'].strip()
         if 'scan_page_count' in data:
             cfg['scan_page_count'] = int(data['scan_page_count'])
         if 'privacy_accepted' in data:
@@ -348,46 +436,75 @@ def api_config():
         return jsonify({"status": "ok", "config": cfg})
     else:
         cfg = load_config()
+        key = cfg.get("api_key") or cfg.get("groq_api_key", "")
         masked_key = ""
-        if cfg.get("groq_api_key"):
-            k = cfg["groq_api_key"]
-            masked_key = k[:8] + "..." + k[-4:] if len(k) > 12 else "****"
+        if key:
+            masked_key = key[:8] + "..." + key[-4:] if len(key) > 12 else "****"
         return jsonify({
-            "has_key": bool(cfg.get("groq_api_key")),
+            "provider": cfg.get("provider", DEFAULT_PROVIDER),
+            "has_key": bool(key),
             "masked_key": masked_key,
             "model": cfg.get("model", DEFAULT_MODEL),
+            "custom_endpoint": cfg.get("custom_endpoint", ""),
             "scan_page_count": cfg.get("scan_page_count", 3),
-            "privacy_accepted": cfg.get("privacy_accepted", False)
+            "privacy_accepted": cfg.get("privacy_accepted", False),
+            "available_providers": [
+                {"id": k, "name": v["name"], "default_model": v["default_model"]}
+                for k, v in AI_PROVIDERS.items()
+            ]
         })
 
+@app.route('/api/test-ai', methods=['POST'])
 @app.route('/api/test-groq', methods=['POST'])
-def api_test_groq():
+def api_test_ai():
     data = request.json or {}
-    key = data.get("key") or load_config().get("groq_api_key")
-    if not key:
+    key = data.get("key") or data.get("api_key") or load_config().get("api_key") or load_config().get("groq_api_key", "")
+    provider = data.get("provider") or load_config().get("provider", "groq")
+    if key and not data.get("provider"):
+        provider = detect_provider(key)
+
+    p_info = AI_PROVIDERS.get(provider, AI_PROVIDERS["groq"])
+    endpoint = data.get("custom_endpoint") or p_info["endpoint"]
+    model = data.get("model") or p_info["fast_model"]
+
+    if not key and provider != "custom":
         return jsonify({"valid": False, "message": "Veuillez renseigner une clé API"}), 400
 
     payload = {
-        "model": FAST_MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 5
+        "max_tokens": 10
     }
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "SmartPdfLibrary/1.0"
+    }
+    if key:
+        headers["Authorization"] = f"Bearer {key.strip()}"
+
     req = urllib.request.Request(
-        GROQ_API_URL,
+        endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {key.strip()}",
-            "Content-Type": "application/json"
-        },
+        headers=headers,
         method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return jsonify({"valid": resp.status == 200, "message": "Connexion Groq réussie !" if resp.status == 200 else "Erreur"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return jsonify({
+                "valid": resp.status == 200,
+                "message": f"Connexion {p_info['name']} réussie !",
+                "provider": provider
+            })
     except urllib.error.HTTPError as e:
-        return jsonify({"valid": False, "message": f"Erreur API ({e.code})"}), 400
+        if e.code == 401:
+            return jsonify({"valid": False, "message": "Clé API non reconnue (401)", "code": 401}), 400
+        elif e.code == 403:
+            return jsonify({"valid": False, "message": "Accès refusé ou région non prise en charge (403)", "code": 403}), 400
+        elif e.code == 429:
+            return jsonify({"valid": False, "message": "Quota dépassé (429)", "code": 429}), 400
+        return jsonify({"valid": False, "message": f"Erreur API ({e.code})", "code": e.code}), 400
     except Exception as e:
-        return jsonify({"valid": False, "message": str(e)}), 400
+        return jsonify({"valid": False, "message": f"Erreur de connexion : {str(e)}"}), 400
 
 @app.route('/api/domains')
 def api_domains():
@@ -688,8 +805,13 @@ HTML_TEMPLATE = """
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="brand">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
-      Bibliothèque PDF
+      <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#1e3a8a,#2563eb,#0d9488); display:flex; align-items:center; justify-content:center; color:white; font-size:18px; box-shadow:0 4px 10px rgba(30,58,138,0.3); margin-right:8px;">
+        📖
+      </div>
+      <div>
+        Bibliothèque PDF
+        <div style="font-size:10px; color:#0d9488; font-weight:700; letter-spacing:0.5px;">MULTI-IA</div>
+      </div>
     </div>
     <button class="nav-btn active" onclick="loadTab('all')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
@@ -701,7 +823,7 @@ HTML_TEMPLATE = """
     </button>
     <button class="nav-btn" onclick="openConfigModal()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      Clé Groq
+      Clé IA & Fournisseur
     </button>
     <button class="btn btn-outline" style="margin-top:auto;" onclick="openConfigModal()">⚙️ Paramètres</button>
   </div>
@@ -764,17 +886,30 @@ HTML_TEMPLATE = """
   <!-- MODAL CONFIG -->
   <div class="modal" id="configModal">
     <div class="modal-content">
-      <h3 style="margin-bottom:12px;">Configuration Groq API</h3>
-      <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
-        Votre clé API est stockée en local et n'est utilisée que pour classifier les documents.
+      <h3 style="margin-bottom:8px;">Configuration IA (Multi-Fournisseurs)</h3>
+      <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:14px;">
+        Supporte Groq, Google Gemini, OpenAI, DeepSeek, Mistral, OpenRouter ou serveur local. L'application reste utilisable même sans clé.
       </p>
-      <label style="font-size:13px; font-weight:600;">Clé API Groq (gsk_...)</label>
-      <input type="password" id="groqKeyInput" style="width:100%; padding:10px; margin:8px 0 16px; border:1px solid var(--border); border-radius:8px;" placeholder="Collez votre clé ici">
-      <div id="testKeyResult" style="font-size:13px; margin-bottom:16px;"></div>
+
+      <label style="font-size:12.5px; font-weight:600;">Fournisseur d'IA :</label>
+      <select id="aiProviderSelect" style="width:100%; padding:9px; margin:6px 0 12px; border:1px solid var(--border); border-radius:8px;">
+        <option value="groq">Groq (Gratuit & Ultra-rapide)</option>
+        <option value="gemini">Google Gemini (Gratuit & Très précis)</option>
+        <option value="openai">OpenAI (ChatGPT)</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="mistral">Mistral AI</option>
+        <option value="openrouter">OpenRouter (Tous modèles)</option>
+        <option value="custom">Autre / Personnalisé (OpenAI compatible)</option>
+      </select>
+
+      <label style="font-size:12.5px; font-weight:600;">Clé API :</label>
+      <input type="password" id="aiKeyInput" style="width:100%; padding:9px; margin:6px 0 14px; border:1px solid var(--border); border-radius:8px;" placeholder="Collez votre clé API" oninput="autoDetectProvider(this.value)">
+
+      <div id="testKeyResult" style="font-size:12.5px; margin-bottom:14px;"></div>
       <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-        <button class="btn btn-outline" onclick="testKey()">Tester</button>
+        <button class="btn btn-outline" onclick="testKey()">Tester la clé</button>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-outline" onclick="closeConfigModal()">Annuler</button>
+          <button class="btn btn-outline" onclick="closeConfigModal()">Fermer</button>
           <button class="btn btn-primary" onclick="saveKey()">Enregistrer</button>
         </div>
       </div>
@@ -918,17 +1053,34 @@ HTML_TEMPLATE = """
       loadDocs();
     }
 
-    function openConfigModal() { document.getElementById('configModal').style.display = 'flex'; }
+    function autoDetectProvider(val) {
+      const v = val.trim();
+      const sel = document.getElementById('aiProviderSelect');
+      if (v.startsWith('gsk_')) sel.value = 'groq';
+      else if (v.startsWith('AIza')) sel.value = 'gemini';
+      else if (v.startsWith('sk-or-')) sel.value = 'openrouter';
+      else if (v.startsWith('sk-')) sel.value = 'openai';
+    }
+
+    async function openConfigModal() {
+      document.getElementById('configModal').style.display = 'flex';
+      const res = await fetch('/api/config');
+      const data = await res.json();
+      if (data.provider) document.getElementById('aiProviderSelect').value = data.provider;
+    }
     function closeConfigModal() { document.getElementById('configModal').style.display = 'none'; }
 
     async function testKey() {
-      const key = document.getElementById('groqKeyInput').value;
+      const key = document.getElementById('aiKeyInput').value;
+      const provider = document.getElementById('aiProviderSelect').value;
       const resEl = document.getElementById('testKeyResult');
-      resEl.textContent = "Test en cours...";
-      const res = await fetch('/api/test-groq', {
+      resEl.textContent = "Test en cours auprès du fournisseur IA...";
+      resEl.style.color = "#3b82f6";
+
+      const res = await fetch('/api/test-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: key })
+        body: JSON.stringify({ key: key, provider: provider })
       });
       const data = await res.json();
       resEl.textContent = data.message;
@@ -936,13 +1088,14 @@ HTML_TEMPLATE = """
     }
 
     async function saveKey() {
-      const key = document.getElementById('groqKeyInput').value;
+      const key = document.getElementById('aiKeyInput').value;
+      const provider = document.getElementById('aiProviderSelect').value;
       await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groq_api_key: key })
+        body: JSON.stringify({ api_key: key, provider: provider })
       });
-      alert("Clé Groq enregistrée !");
+      alert("Configuration IA enregistrée avec succès !");
       closeConfigModal();
     }
 

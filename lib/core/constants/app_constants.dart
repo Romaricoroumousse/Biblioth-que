@@ -1,10 +1,140 @@
 import 'package:flutter/material.dart';
 
+class AiProviderInfo {
+  final String id;
+  final String name;
+  final String defaultEndpoint;
+  final String defaultModel;
+  final List<String> availableModels;
+  final String keyHint;
+  final String keyHelpUrl;
+  final String keyPrefix;
+  final bool isCustom;
+
+  const AiProviderInfo({
+    required this.id,
+    required this.name,
+    required this.defaultEndpoint,
+    required this.defaultModel,
+    required this.availableModels,
+    required this.keyHint,
+    required this.keyHelpUrl,
+    required this.keyPrefix,
+    this.isCustom = false,
+  });
+}
+
 class AppConstants {
   static const String appName = 'Bibliothèque PDF';
   static const String appVersion = '1.0.0';
 
-  // Modèles Groq disponibles
+  // Fournisseurs d'IA supportés
+  static const String providerGroq = 'groq';
+  static const String providerGemini = 'gemini';
+  static const String providerOpenAi = 'openai';
+  static const String providerDeepSeek = 'deepseek';
+  static const String providerMistral = 'mistral';
+  static const String providerOpenRouter = 'openrouter';
+  static const String providerCustom = 'custom';
+
+  static const List<AiProviderInfo> supportedProviders = [
+    AiProviderInfo(
+      id: providerGroq,
+      name: 'Groq (Gratuit & Ultra-rapide)',
+      defaultEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      defaultModel: 'llama-3.3-70b-versatile',
+      availableModels: [
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+        'mixtral-8x7b-32768',
+      ],
+      keyHint: 'gsk_...',
+      keyHelpUrl: 'https://console.groq.com/keys',
+      keyPrefix: 'gsk_',
+    ),
+    AiProviderInfo(
+      id: providerGemini,
+      name: 'Google Gemini (Gratuit & Très précis)',
+      defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      defaultModel: 'gemini-1.5-flash',
+      availableModels: [
+        'gemini-1.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro',
+      ],
+      keyHint: 'AIzaSy...',
+      keyHelpUrl: 'https://aistudio.google.com/app/apikey',
+      keyPrefix: 'AIza',
+    ),
+    AiProviderInfo(
+      id: providerOpenAi,
+      name: 'OpenAI (ChatGPT)',
+      defaultEndpoint: 'https://api.openai.com/v1/chat/completions',
+      defaultModel: 'gpt-4o-mini',
+      availableModels: [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'gpt-3.5-turbo',
+      ],
+      keyHint: 'sk-proj-... ou sk-...',
+      keyHelpUrl: 'https://platform.openai.com/api-keys',
+      keyPrefix: 'sk-',
+    ),
+    AiProviderInfo(
+      id: providerDeepSeek,
+      name: 'DeepSeek',
+      defaultEndpoint: 'https://api.deepseek.com/chat/completions',
+      defaultModel: 'deepseek-chat',
+      availableModels: [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ],
+      keyHint: 'sk-...',
+      keyHelpUrl: 'https://platform.deepseek.com',
+      keyPrefix: 'sk-',
+    ),
+    AiProviderInfo(
+      id: providerMistral,
+      name: 'Mistral AI',
+      defaultEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+      defaultModel: 'mistral-small-latest',
+      availableModels: [
+        'mistral-small-latest',
+        'mistral-medium-latest',
+        'open-mistral-nemo',
+      ],
+      keyHint: 'Collez votre clé Mistral...',
+      keyHelpUrl: 'https://console.mistral.ai/api-keys',
+      keyPrefix: '',
+    ),
+    AiProviderInfo(
+      id: providerOpenRouter,
+      name: 'OpenRouter (Toutes les IA réunies)',
+      defaultEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      defaultModel: 'google/gemini-2.0-flash-exp:free',
+      availableModels: [
+        'google/gemini-2.0-flash-exp:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+        'openai/gpt-4o-mini',
+      ],
+      keyHint: 'sk-or-v1-...',
+      keyHelpUrl: 'https://openrouter.ai/keys',
+      keyPrefix: 'sk-or-',
+    ),
+    AiProviderInfo(
+      id: providerCustom,
+      name: 'Autre IA / Personnalisée (OpenAI compatible, Ollama...)',
+      defaultEndpoint: 'http://localhost:11434/v1/chat/completions',
+      defaultModel: 'llama3',
+      availableModels: ['llama3', 'mistral', 'qwen2.5', 'personnalisé'],
+      keyHint: 'Clé API (optionnelle pour Ollama local)',
+      keyHelpUrl: '',
+      keyPrefix: '',
+      isCustom: true,
+    ),
+  ];
+
+  // Rétrocompatibilité Groq
   static const String groqDefaultModel = 'llama-3.3-70b-versatile';
   static const String groqFastModel = 'llama-3.1-8b-instant';
   static const String groqApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
@@ -13,10 +143,14 @@ class AppConstants {
   static const int defaultScanPageCount = 3;
   static const int minScanPageCount = 1;
   static const int maxScanPageCount = 10;
-  static const int maxTextCharsForAi = 8000; // Limite raisonnable de tokens pour le résumé
+  static const int maxTextCharsForAi = 8000;
 
-  // Clés de stockage sécurisé et préférences
-  static const String keyGroqApiKey = 'groq_api_key';
+  // Clés de stockage
+  static const String keyActiveProvider = 'active_ai_provider';
+  static const String keyAiApiKey = 'ai_api_key';
+  static const String keyCustomEndpoint = 'custom_ai_endpoint';
+  static const String keyCustomModel = 'custom_ai_model';
+  static const String keyGroqApiKey = 'groq_api_key'; // Préservé pour migration
   static const String keySelectedModel = 'selected_groq_model';
   static const String keyScanPageCount = 'scan_page_count';
   static const String keyPrivacyAccepted = 'privacy_accepted';
@@ -59,6 +193,7 @@ class AppConstants {
     'Éducation': Color(0xFFF4511E),
     'Langues': Color(0xFF039BE5),
     'Littérature': Color(0xFF8D6E63),
+    'Documents & Cours': Color(0xFF0D9488),
     'Autre': Color(0xFF757575),
   };
 }

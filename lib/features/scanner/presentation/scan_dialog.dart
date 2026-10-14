@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import '../../../models/domain_model.dart';
+import '../../../core/storage/secure_storage_service.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../services/ai_classification_service.dart';
 import '../../../services/pdf_scanner_service.dart';
 
@@ -45,7 +46,7 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
       }
 
       setState(() {
-        _status = 'Vérification des empreintes et métadonnées (${files.length} PDF trouvés)...';
+        _status = 'Vérification des empreintes (${files.length} PDF trouvés)...';
       });
 
       // 2. Inspection des doublons et des documents déjà analysés
@@ -74,13 +75,18 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         return;
       }
 
+      final hasKey = await SecureStorageService.instance.hasApiKey();
+      final providerName = await SecureStorageService.instance.getActiveProviderName();
+
       setState(() {
         _current = 0;
         _total = toAnalyze.length;
-        _status = 'Analyse intelligente avec Groq IA (${toAnalyze.length} nouveaux documents)...';
+        _status = hasKey
+            ? 'Classification avec $providerName (${toAnalyze.length} documents)...'
+            : 'Indexation locale (${toAnalyze.length} documents)...';
       });
 
-      // 3. Analyse avec le LLM Groq
+      // 3. Analyse avec le LLM ou indexation locale
       for (int i = 0; i < toAnalyze.length; i++) {
         if (_isCancelled) break;
 
@@ -88,7 +94,9 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         setState(() {
           _current = i + 1;
           _currentFileName = item.fileName;
-          _status = 'Classification Groq (${i + 1}/${toAnalyze.length})';
+          _status = hasKey
+              ? 'Classification $providerName (${i + 1}/${toAnalyze.length})'
+              : 'Indexation locale (${i + 1}/${toAnalyze.length})';
         });
 
         try {
@@ -99,14 +107,13 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
           _newAnalyzedCount++;
         } catch (_) {}
 
-        // Pause pour respecter les quotas de débit de Groq
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 150));
       }
 
       if (mounted) {
         setState(() {
           _isFinished = true;
-          _status = 'Scan terminé !';
+          _status = 'Scan terminé avec succès !';
         });
       }
     } catch (e) {
@@ -129,14 +136,13 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            Icon(
-              _isFinished ? Icons.check_circle : Icons.sync,
-              color: _isFinished ? Colors.green : Theme.of(context).primaryColor,
-            ),
+            const AppLogo(size: 28),
             const SizedBox(width: 10),
-            Text(
-              _isFinished ? 'Scan terminé' : 'Scan de la bibliothèque',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Expanded(
+              child: Text(
+                _isFinished ? 'Scan terminé' : 'Scan de la bibliothèque',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -146,7 +152,7 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
           children: [
             Text(
               _status,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 16),
             if (!_isFinished && _total > 0) ...[
@@ -193,12 +199,12 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '• $_newAnalyzedCount nouveau(x) document(s) classé(s) par l\'IA',
+                      '• $_newAnalyzedCount nouveau(x) document(s) répertorié(s)',
                       style: TextStyle(fontSize: 13, color: Colors.green.shade900),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '• $_alreadyIndexedCount document(s) déjà répertorié(s)',
+                      '• $_alreadyIndexedCount document(s) déjà présent(s)',
                       style: TextStyle(fontSize: 13, color: Colors.green.shade900),
                     ),
                   ],
