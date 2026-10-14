@@ -32,13 +32,19 @@ AI_PROVIDERS = {
     "groq": {
         "name": "Groq",
         "endpoint": "https://api.groq.com/openai/v1/chat/completions",
-        "default_model": "llama-3.3-70b-versatile",
+        "default_model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "fast_model": "llama-3.1-8b-instant"
+    },
+    "xai": {
+        "name": "xAI (Grok)",
+        "endpoint": "https://api.x.ai/v1/chat/completions",
+        "default_model": "grok-2-latest",
+        "fast_model": "grok-beta"
     },
     "gemini": {
         "name": "Google Gemini",
         "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        "default_model": "gemini-1.5-flash",
+        "default_model": "gemini-2.0-flash",
         "fast_model": "gemini-1.5-flash"
     },
     "openai": {
@@ -74,26 +80,31 @@ AI_PROVIDERS = {
 }
 
 DEFAULT_PROVIDER = "groq"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # ==================== CONFIGURATION ====================
 
 def load_config():
+    cfg = None
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                cfg = json.load(f)
         except Exception:
             pass
-    return {
-        "provider": DEFAULT_PROVIDER,
-        "api_key": os.environ.get("AI_API_KEY", "") or os.environ.get("GROQ_API_KEY", ""),
-        "groq_api_key": os.environ.get("GROQ_API_KEY", ""),
-        "model": DEFAULT_MODEL,
-        "custom_endpoint": "",
-        "scan_page_count": 3,
-        "privacy_accepted": False
-    }
+    if cfg is None:
+        cfg = {
+            "provider": DEFAULT_PROVIDER,
+            "api_key": os.environ.get("AI_API_KEY", "") or os.environ.get("GROQ_API_KEY", ""),
+            "groq_api_key": os.environ.get("GROQ_API_KEY", ""),
+            "model": DEFAULT_MODEL,
+            "custom_endpoint": "",
+            "scan_page_count": 3,
+            "privacy_accepted": False
+        }
+    if cfg.get("model") == "llama-3.3-70b-versatile":
+        cfg["model"] = DEFAULT_MODEL
+    return cfg
 
 def save_config(cfg):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -238,6 +249,7 @@ def extract_pdf_info(filepath: str, max_pages: int = 3):
 def detect_provider(key: str) -> str:
     k = key.strip()
     if k.startswith('gsk_'): return 'groq'
+    if k.startswith('xai-'): return 'xai'
     if k.startswith('AIza'): return 'gemini'
     if k.startswith('sk-or-'): return 'openrouter'
     if k.startswith('sk-'): return 'openai'
@@ -892,8 +904,9 @@ HTML_TEMPLATE = """
       </p>
 
       <label style="font-size:12.5px; font-weight:600;">Fournisseur d'IA :</label>
-      <select id="aiProviderSelect" style="width:100%; padding:9px; margin:6px 0 12px; border:1px solid var(--border); border-radius:8px;">
+      <select id="aiProviderSelect" style="width:100%; padding:9px; margin:6px 0 12px; border:1px solid var(--border); border-radius:8px;" onchange="onProviderSelectChanged(this.value)">
         <option value="groq">Groq (Gratuit & Ultra-rapide)</option>
+        <option value="xai">xAI (Grok)</option>
         <option value="gemini">Google Gemini (Gratuit & Très précis)</option>
         <option value="openai">OpenAI (ChatGPT)</option>
         <option value="deepseek">DeepSeek</option>
@@ -903,7 +916,10 @@ HTML_TEMPLATE = """
       </select>
 
       <label style="font-size:12.5px; font-weight:600;">Clé API :</label>
-      <input type="password" id="aiKeyInput" style="width:100%; padding:9px; margin:6px 0 14px; border:1px solid var(--border); border-radius:8px;" placeholder="Collez votre clé API" oninput="autoDetectProvider(this.value)">
+      <input type="password" id="aiKeyInput" style="width:100%; padding:9px; margin:6px 0 12px; border:1px solid var(--border); border-radius:8px;" placeholder="Collez votre clé API" oninput="autoDetectProvider(this.value)">
+
+      <label style="font-size:12.5px; font-weight:600;">Modèle IA (modifiable librement) :</label>
+      <input type="text" id="aiModelInput" style="width:100%; padding:9px; margin:6px 0 14px; border:1px solid var(--border); border-radius:8px;" placeholder="ex: meta-llama/llama-4-scout-17b-16e-instruct">
 
       <div id="testKeyResult" style="font-size:12.5px; margin-bottom:14px;"></div>
       <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
@@ -1053,13 +1069,36 @@ HTML_TEMPLATE = """
       loadDocs();
     }
 
+    const defaultModelsByProvider = {
+      groq: "meta-llama/llama-4-scout-17b-16e-instruct",
+      xai: "grok-2-latest",
+      gemini: "gemini-2.0-flash",
+      openai: "gpt-4o-mini",
+      deepseek: "deepseek-chat",
+      mistral: "mistral-small-latest",
+      openrouter: "google/gemini-2.0-flash-exp:free",
+      custom: "llama3"
+    };
+
+    function onProviderSelectChanged(prov) {
+      const modelInput = document.getElementById('aiModelInput');
+      if (defaultModelsByProvider[prov]) {
+        modelInput.value = defaultModelsByProvider[prov];
+      }
+    }
+
     function autoDetectProvider(val) {
       const v = val.trim();
       const sel = document.getElementById('aiProviderSelect');
-      if (v.startsWith('gsk_')) sel.value = 'groq';
-      else if (v.startsWith('AIza')) sel.value = 'gemini';
-      else if (v.startsWith('sk-or-')) sel.value = 'openrouter';
-      else if (v.startsWith('sk-')) sel.value = 'openai';
+      let changed = false;
+      if (v.startsWith('gsk_')) { sel.value = 'groq'; changed = true; }
+      else if (v.startsWith('xai-')) { sel.value = 'xai'; changed = true; }
+      else if (v.startsWith('AIza')) { sel.value = 'gemini'; changed = true; }
+      else if (v.startsWith('sk-or-')) { sel.value = 'openrouter'; changed = true; }
+      else if (v.startsWith('sk-')) { sel.value = 'openai'; changed = true; }
+      if (changed) {
+        onProviderSelectChanged(sel.value);
+      }
     }
 
     async function openConfigModal() {
@@ -1067,12 +1106,18 @@ HTML_TEMPLATE = """
       const res = await fetch('/api/config');
       const data = await res.json();
       if (data.provider) document.getElementById('aiProviderSelect').value = data.provider;
+      if (data.model) {
+        document.getElementById('aiModelInput').value = data.model;
+      } else if (data.provider && defaultModelsByProvider[data.provider]) {
+        document.getElementById('aiModelInput').value = defaultModelsByProvider[data.provider];
+      }
     }
     function closeConfigModal() { document.getElementById('configModal').style.display = 'none'; }
 
     async function testKey() {
       const key = document.getElementById('aiKeyInput').value;
       const provider = document.getElementById('aiProviderSelect').value;
+      const model = document.getElementById('aiModelInput').value.trim();
       const resEl = document.getElementById('testKeyResult');
       resEl.textContent = "Test en cours auprès du fournisseur IA...";
       resEl.style.color = "#3b82f6";
@@ -1080,7 +1125,7 @@ HTML_TEMPLATE = """
       const res = await fetch('/api/test-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: key, provider: provider })
+        body: JSON.stringify({ key: key, provider: provider, model: model })
       });
       const data = await res.json();
       resEl.textContent = data.message;
@@ -1090,10 +1135,11 @@ HTML_TEMPLATE = """
     async function saveKey() {
       const key = document.getElementById('aiKeyInput').value;
       const provider = document.getElementById('aiProviderSelect').value;
+      const model = document.getElementById('aiModelInput').value.trim();
       await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: key, provider: provider })
+        body: JSON.stringify({ api_key: key, provider: provider, model: model })
       });
       alert("Configuration IA enregistrée avec succès !");
       closeConfigModal();

@@ -127,7 +127,21 @@ class SecureStorageService {
     final prov = provider ?? await getActiveProvider();
     final key = '${AppConstants.keySelectedModel}_$prov';
     final custom = _prefs?.getString(key);
-    if (custom != null && custom.isNotEmpty) return custom;
+
+    // Migration automatique des modèles obsolètes stockés précédemment
+    if (custom != null && custom.isNotEmpty) {
+      if (prov == AppConstants.providerGroq && custom == 'llama-3.3-70b-versatile') {
+        const modernGroq = 'meta-llama/llama-4-scout-17b-16e-instruct';
+        await _prefs?.setString(key, modernGroq);
+        return modernGroq;
+      }
+      if (prov == AppConstants.providerGemini && (custom == 'gemini-1.0-pro' || custom == 'gemini-1.5-flash-latest')) {
+        const modernGemini = 'gemini-2.0-flash';
+        await _prefs?.setString(key, modernGemini);
+        return modernGemini;
+      }
+      return custom;
+    }
 
     final info = AppConstants.supportedProviders.firstWhere(
       (p) => p.id == prov,

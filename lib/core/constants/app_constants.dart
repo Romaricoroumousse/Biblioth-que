@@ -30,6 +30,7 @@ class AppConstants {
 
   // Fournisseurs d'IA supportés
   static const String providerGroq = 'groq';
+  static const String providerXai = 'xai';
   static const String providerGemini = 'gemini';
   static const String providerOpenAi = 'openai';
   static const String providerDeepSeek = 'deepseek';
@@ -42,10 +43,12 @@ class AppConstants {
       id: providerGroq,
       name: 'Groq (Gratuit & Ultra-rapide)',
       defaultEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      defaultModel: 'llama-3.3-70b-versatile',
+      defaultModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
       availableModels: [
-        'llama-3.3-70b-versatile',
+        'meta-llama/llama-4-scout-17b-16e-instruct',
         'llama-3.1-8b-instant',
+        'llama-3.3-70b-specdec',
+        'qwen-qwq-32b',
         'mixtral-8x7b-32768',
       ],
       keyHint: 'gsk_...',
@@ -53,14 +56,30 @@ class AppConstants {
       keyPrefix: 'gsk_',
     ),
     AiProviderInfo(
+      id: providerXai,
+      name: 'xAI (Grok)',
+      defaultEndpoint: 'https://api.x.ai/v1/chat/completions',
+      defaultModel: 'grok-2-latest',
+      availableModels: [
+        'grok-2-latest',
+        'grok-2',
+        'grok-beta',
+        'grok-vision-beta',
+      ],
+      keyHint: 'xai-...',
+      keyHelpUrl: 'https://console.x.ai',
+      keyPrefix: 'xai-',
+    ),
+    AiProviderInfo(
       id: providerGemini,
       name: 'Google Gemini (Gratuit & Très précis)',
       defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      defaultModel: 'gemini-1.5-flash',
+      defaultModel: 'gemini-2.0-flash',
       availableModels: [
-        'gemini-1.5-flash',
         'gemini-2.0-flash',
+        'gemini-1.5-flash',
         'gemini-1.5-pro',
+        'gemini-2.0-flash-lite-preview-02-05',
       ],
       keyHint: 'AIzaSy...',
       keyHelpUrl: 'https://aistudio.google.com/app/apikey',
@@ -74,7 +93,8 @@ class AppConstants {
       availableModels: [
         'gpt-4o-mini',
         'gpt-4o',
-        'gpt-3.5-turbo',
+        'o3-mini',
+        'gpt-4-turbo',
       ],
       keyHint: 'sk-proj-... ou sk-...',
       keyHelpUrl: 'https://platform.openai.com/api-keys',
@@ -100,8 +120,9 @@ class AppConstants {
       defaultModel: 'mistral-small-latest',
       availableModels: [
         'mistral-small-latest',
-        'mistral-medium-latest',
+        'mistral-large-latest',
         'open-mistral-nemo',
+        'codestral-latest',
       ],
       keyHint: 'Collez votre clé Mistral...',
       keyHelpUrl: 'https://console.mistral.ai/api-keys',
@@ -115,6 +136,7 @@ class AppConstants {
       availableModels: [
         'google/gemini-2.0-flash-exp:free',
         'meta-llama/llama-3.3-70b-instruct:free',
+        'deepseek/deepseek-r1:free',
         'openai/gpt-4o-mini',
       ],
       keyHint: 'sk-or-v1-...',
@@ -126,7 +148,7 @@ class AppConstants {
       name: 'Autre IA / Personnalisée (OpenAI compatible, Ollama...)',
       defaultEndpoint: 'http://localhost:11434/v1/chat/completions',
       defaultModel: 'llama3',
-      availableModels: ['llama3', 'mistral', 'qwen2.5', 'personnalisé'],
+      availableModels: ['llama3', 'mistral', 'qwen2.5', 'deepseek-r1'],
       keyHint: 'Clé API (optionnelle pour Ollama local)',
       keyHelpUrl: '',
       keyPrefix: '',
@@ -135,7 +157,7 @@ class AppConstants {
   ];
 
   // Rétrocompatibilité Groq
-  static const String groqDefaultModel = 'llama-3.3-70b-versatile';
+  static const String groqDefaultModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
   static const String groqFastModel = 'llama-3.1-8b-instant';
   static const String groqApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
 

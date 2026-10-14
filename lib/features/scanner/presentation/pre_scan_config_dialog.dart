@@ -14,6 +14,7 @@ class PreScanConfigDialog extends StatefulWidget {
 class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
   final TextEditingController _keyController = TextEditingController();
   final TextEditingController _endpointController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
   String _selectedProvider = AppConstants.providerGroq;
   bool _isTesting = false;
   String? _testMessage;
@@ -29,12 +30,14 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
     final storage = SecureStorageService.instance;
     final prov = await storage.getActiveProvider();
     final key = await storage.getApiKey(provider: prov) ?? '';
+    final model = await storage.getSelectedModel(provider: prov);
     final endpoint = await storage.getCustomEndpoint();
 
     if (!mounted) return;
     setState(() {
       _selectedProvider = prov;
       _keyController.text = key;
+      _modelController.text = model;
       _endpointController.text = endpoint;
     });
   }
@@ -43,16 +46,28 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
   void dispose() {
     _keyController.dispose();
     _endpointController.dispose();
+    _modelController.dispose();
     super.dispose();
+  }
+
+  Future<void> _onProviderSelected(String prov) async {
+    final storage = SecureStorageService.instance;
+    final key = await storage.getApiKey(provider: prov) ?? '';
+    final model = await storage.getSelectedModel(provider: prov);
+
+    setState(() {
+      _selectedProvider = prov;
+      if (key.isNotEmpty) _keyController.text = key;
+      _modelController.text = model;
+      _testMessage = null;
+    });
   }
 
   void _onKeyChanged(String value) {
     // Détection automatique du fournisseur
     final detected = UnifiedAiClient.detectProviderFromKey(value);
     if (detected != _selectedProvider && value.length >= 4) {
-      setState(() {
-        _selectedProvider = detected;
-      });
+      _onProviderSelected(detected);
     }
   }
 
@@ -74,6 +89,7 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
     final res = await UnifiedAiClient.instance.testApiKey(
       provider: _selectedProvider,
       apiKey: key,
+      model: _modelController.text.trim(),
       customEndpoint: _endpointController.text.trim(),
     );
 
@@ -88,11 +104,15 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
 
   Future<void> _saveAndProceed() async {
     final key = _keyController.text.trim();
+    final model = _modelController.text.trim();
     final storage = SecureStorageService.instance;
 
     await storage.setActiveProvider(_selectedProvider);
     if (key.isNotEmpty) {
       await storage.setApiKey(key, provider: _selectedProvider);
+    }
+    if (model.isNotEmpty) {
+      await storage.setSelectedModel(model, provider: _selectedProvider);
     }
     if (_selectedProvider == AppConstants.providerCustom) {
       await storage.setCustomEndpoint(_endpointController.text.trim());
@@ -168,10 +188,7 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
               }).toList(),
               onChanged: (val) {
                 if (val != null) {
-                  setState(() {
-                    _selectedProvider = val;
-                    _testMessage = null;
-                  });
+                  _onProviderSelected(val);
                 }
               },
             ),
@@ -198,6 +215,50 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
                         tooltip: 'Tester la clé',
                       ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Champ modèle (entièrement personnalisable)
+            TextField(
+              controller: _modelController,
+              decoration: InputDecoration(
+                labelText: 'Modèle IA (modifiable librement)',
+                hintText: currentProviderInfo.defaultModel,
+                prefixIcon: const Icon(Icons.tune),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                helperText: 'Modèle actif. Vous pouvez taper n\'importe quel nom de modèle.',
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // Suggestions de modèles en 1 clic
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: currentProviderInfo.availableModels.map((m) {
+                  final isSelected = _modelController.text.trim() == m;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(
+                        m,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? Colors.blue.shade900 : null,
+                        ),
+                      ),
+                      backgroundColor: isSelected ? Colors.blue.shade100 : null,
+                      onPressed: () {
+                        setState(() {
+                          _modelController.text = m;
+                        });
+                      },
+                    ),
+                  );
+                }).toList(),
               ),
             ),
 

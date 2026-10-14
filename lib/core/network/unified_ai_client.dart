@@ -58,6 +58,7 @@ class UnifiedAiClient {
   static String detectProviderFromKey(String key) {
     final k = key.trim();
     if (k.startsWith('gsk_')) return AppConstants.providerGroq;
+    if (k.startsWith('xai-')) return AppConstants.providerXai;
     if (k.startsWith('AIza')) return AppConstants.providerGemini;
     if (k.startsWith('sk-or-')) return AppConstants.providerOpenRouter;
     if (k.startsWith('sk-')) return AppConstants.providerOpenAi;
@@ -126,9 +127,42 @@ class UnifiedAiClient {
       if (response.statusCode == 200) {
         return AiTestResult(
           isValid: true,
-          message: 'Connexion réussie ! La clé est opérationnelle.',
+          message: 'Connexion réussie ! Modèle $chosenModel opérationnel.',
           statusCode: 200,
         );
+      }
+
+      // Si le modèle est obsolète/introuvable (404), tenter automatiquement le modèle recommandé
+      if (response.statusCode == 404) {
+        if (provider == AppConstants.providerGroq && chosenModel != 'meta-llama/llama-4-scout-17b-16e-instruct') {
+          final fallbackRes = await testApiKey(
+            provider: provider,
+            apiKey: apiKey,
+            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+            customEndpoint: customEndpoint,
+          );
+          if (fallbackRes.isValid) {
+            return AiTestResult(
+              isValid: true,
+              message: 'Connexion réussie avec le modèle à jour : meta-llama/llama-4-scout-17b-16e-instruct',
+              statusCode: 200,
+            );
+          }
+        } else if (provider == AppConstants.providerGemini && chosenModel != 'gemini-2.0-flash') {
+          final fallbackRes = await testApiKey(
+            provider: provider,
+            apiKey: apiKey,
+            model: 'gemini-2.0-flash',
+            customEndpoint: customEndpoint,
+          );
+          if (fallbackRes.isValid) {
+            return AiTestResult(
+              isValid: true,
+              message: 'Connexion réussie avec le modèle à jour : gemini-2.0-flash',
+              statusCode: 200,
+            );
+          }
+        }
       }
 
       String errorDetail = '';
@@ -155,7 +189,7 @@ class UnifiedAiClient {
       } else if (response.statusCode == 404) {
         return AiTestResult(
           isValid: false,
-          message: 'Modèle "$chosenModel" introuvable (Erreur 404). Essayez un autre modèle.',
+          message: 'Modèle "$chosenModel" introuvable (Erreur 404). Utilisez meta-llama/llama-4-scout-17b-16e-instruct ou vérifiez le nom.',
           statusCode: 404,
         );
       } else if (response.statusCode == 429) {
@@ -261,6 +295,26 @@ $extractedText
       final content = decodedBody['choices'][0]['message']['content'];
       final jsonResult = _extractJson(content.toString());
       return AiAnalysisResult.fromJson(jsonResult);
+    } else if (response.statusCode == 404 && provider == AppConstants.providerGroq && chosenModel != 'meta-llama/llama-4-scout-17b-16e-instruct') {
+      // Re-tentative automatique avec le nouveau modèle Groq
+      return await analyzeDocument(
+        provider: provider,
+        apiKey: apiKey,
+        fileName: fileName,
+        extractedText: extractedText,
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        customEndpoint: customEndpoint,
+      );
+    } else if (response.statusCode == 404 && provider == AppConstants.providerGemini && chosenModel != 'gemini-2.0-flash') {
+      // Re-tentative automatique avec le nouveau modèle Gemini
+      return await analyzeDocument(
+        provider: provider,
+        apiKey: apiKey,
+        fileName: fileName,
+        extractedText: extractedText,
+        model: 'gemini-2.0-flash',
+        customEndpoint: customEndpoint,
+      );
     } else {
       final errorBody = utf8.decode(response.bodyBytes);
       throw Exception('Erreur API ($provider - ${response.statusCode}) : $errorBody');

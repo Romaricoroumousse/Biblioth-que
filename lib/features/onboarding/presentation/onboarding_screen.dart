@@ -21,6 +21,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // Étape 1 : Fournisseur et Clé IA (Optionnel)
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _endpointController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController(
+    text: AppConstants.groqDefaultModel,
+  );
   String _selectedProvider = AppConstants.providerGroq;
   bool _isTestingKey = false;
   String? _keyTestMessage;
@@ -33,24 +36,58 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _privacyConsentChecked = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadInitialConfig();
+  }
+
+  Future<void> _loadInitialConfig() async {
+    final storage = SecureStorageService.instance;
+    final prov = await storage.getActiveProvider();
+    final key = await storage.getApiKey(provider: prov) ?? '';
+    final model = await storage.getSelectedModel(provider: prov);
+    final endpoint = await storage.getCustomEndpoint();
+
+    if (!mounted) return;
+    setState(() {
+      _selectedProvider = prov;
+      _apiKeyController.text = key;
+      _modelController.text = model;
+      _endpointController.text = endpoint;
+    });
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     _apiKeyController.dispose();
     _endpointController.dispose();
+    _modelController.dispose();
     super.dispose();
+  }
+
+  void _onProviderChanged(String val) {
+    final info = AppConstants.supportedProviders.firstWhere(
+      (p) => p.id == val,
+      orElse: () => AppConstants.supportedProviders.first,
+    );
+    setState(() {
+      _selectedProvider = val;
+      _modelController.text = info.defaultModel;
+      _keyTestMessage = null;
+    });
   }
 
   void _onKeyChanged(String val) {
     final detected = UnifiedAiClient.detectProviderFromKey(val);
     if (detected != _selectedProvider && val.length >= 4) {
-      setState(() {
-        _selectedProvider = detected;
-      });
+      _onProviderChanged(detected);
     }
   }
 
   Future<void> _testAndSaveApiKey() async {
     final key = _apiKeyController.text.trim();
+    final model = _modelController.text.trim();
     if (key.isEmpty && _selectedProvider != AppConstants.providerCustom) {
       setState(() {
         _keyTestMessage = 'Veuillez saisir votre clé API.';
@@ -67,6 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final res = await UnifiedAiClient.instance.testApiKey(
       provider: _selectedProvider,
       apiKey: key,
+      model: model,
       customEndpoint: _endpointController.text.trim(),
     );
 
@@ -81,6 +119,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (res.isValid) {
       await SecureStorageService.instance.setActiveProvider(_selectedProvider);
       await SecureStorageService.instance.setApiKey(key, provider: _selectedProvider);
+      if (model.isNotEmpty) {
+        await SecureStorageService.instance.setSelectedModel(model, provider: _selectedProvider);
+      }
       if (_selectedProvider == AppConstants.providerCustom) {
         await SecureStorageService.instance.setCustomEndpoint(_endpointController.text.trim());
       }
@@ -89,12 +130,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _saveAndNextPage() async {
     final key = _apiKeyController.text.trim();
+    final model = _modelController.text.trim();
     if (key.isNotEmpty) {
       await SecureStorageService.instance.setActiveProvider(_selectedProvider);
       await SecureStorageService.instance.setApiKey(key, provider: _selectedProvider);
-      if (_selectedProvider == AppConstants.providerCustom) {
-        await SecureStorageService.instance.setCustomEndpoint(_endpointController.text.trim());
-      }
+    }
+    if (model.isNotEmpty) {
+      await SecureStorageService.instance.setSelectedModel(model, provider: _selectedProvider);
+    }
+    if (_selectedProvider == AppConstants.providerCustom) {
+      await SecureStorageService.instance.setCustomEndpoint(_endpointController.text.trim());
     }
     _pageController.nextPage(
       duration: const Duration(milliseconds: 300),
@@ -262,10 +307,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             }).toList(),
             onChanged: (val) {
               if (val != null) {
-                setState(() {
-                  _selectedProvider = val;
-                  _keyTestMessage = null;
-                });
+                _onProviderChanged(val);
               }
             },
           ),
@@ -291,6 +333,50 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       onPressed: _testAndSaveApiKey,
                       tooltip: 'Tester la clé',
                     ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Modèle IA personnalisable
+          TextField(
+            controller: _modelController,
+            decoration: InputDecoration(
+              labelText: 'Modèle IA (modifiable librement)',
+              hintText: currentProviderInfo.defaultModel,
+              prefixIcon: const Icon(Icons.tune),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              helperText: 'Vous pouvez sélectionner une suggestion ou taper le modèle de votre choix.',
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Suggestions en 1 clic
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: currentProviderInfo.availableModels.map((m) {
+                final isSelected = _modelController.text.trim() == m;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    label: Text(
+                      m,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? Colors.blue.shade900 : null,
+                      ),
+                    ),
+                    backgroundColor: isSelected ? Colors.blue.shade100 : null,
+                    onPressed: () {
+                      setState(() {
+                        _modelController.text = m;
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
             ),
           ),
 

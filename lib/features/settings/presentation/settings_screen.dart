@@ -95,9 +95,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveAndTestApiKey() async {
     final key = _apiKeyController.text.trim();
+    final model = _modelController.text.trim().isNotEmpty
+        ? _modelController.text.trim()
+        : AppConstants.supportedProviders.firstWhere((p) => p.id == _selectedProvider).defaultModel;
     final storage = SecureStorageService.instance;
 
     setState(() {
+      _selectedModel = model;
       _isTestingKey = true;
       _keyTestMessage = null;
     });
@@ -105,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final res = await UnifiedAiClient.instance.testApiKey(
       provider: _selectedProvider,
       apiKey: key,
-      model: _selectedModel,
+      model: model,
       customEndpoint: _endpointController.text.trim(),
     );
 
@@ -114,16 +118,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isTestingKey = false;
       _isKeyValid = res.isValid;
-      _keyTestMessage = res.message;
+      _testMessageFromResult(res);
     });
 
     // Enregistrer quoi qu'il arrive si l'utilisateur le souhaite
     await storage.setActiveProvider(_selectedProvider);
     await storage.setApiKey(key, provider: _selectedProvider);
-    await storage.setSelectedModel(_selectedModel, provider: _selectedProvider);
+    await storage.setSelectedModel(model, provider: _selectedProvider);
     if (_selectedProvider == AppConstants.providerCustom) {
       await storage.setCustomEndpoint(_endpointController.text.trim());
     }
+  }
+
+  void _testMessageFromResult(AiTestResult res) {
+    _keyTestMessage = res.message;
   }
 
   Future<void> _deleteKey() async {
@@ -285,29 +293,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
 
                         const SizedBox(height: 16),
-                        const Text('Modèle de langage :', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const Text('Modèle de langage (modifiable librement) :', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: currentProviderInfo.availableModels.contains(_selectedModel)
-                              ? _selectedModel
-                              : currentProviderInfo.defaultModel,
-                          isExpanded: true,
+                        TextField(
+                          controller: _modelController,
                           decoration: InputDecoration(
+                            labelText: 'Version ou nom du modèle',
+                            hintText: currentProviderInfo.defaultModel,
+                            prefixIcon: const Icon(Icons.tune),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            helperText: 'Vous pouvez entrer la version exacte souhaitée (ex: ${currentProviderInfo.defaultModel}).',
                           ),
-                          items: currentProviderInfo.availableModels.map((m) {
-                            return DropdownMenuItem<String>(
-                              value: m,
-                              child: Text(m, style: const TextStyle(fontSize: 13)),
-                            );
-                          }).toList(),
-                          onChanged: (val) async {
-                            if (val != null) {
-                              setState(() => _selectedModel = val);
-                              await SecureStorageService.instance.setSelectedModel(val, provider: _selectedProvider);
-                            }
+                          onChanged: (val) {
+                            setState(() => _selectedModel = val.trim());
                           },
+                        ),
+                        const SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: currentProviderInfo.availableModels.map((m) {
+                              final isSelected = _modelController.text.trim() == m;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ActionChip(
+                                  label: Text(
+                                    m,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      color: isSelected ? Colors.blue.shade900 : null,
+                                    ),
+                                  ),
+                                  backgroundColor: isSelected ? Colors.blue.shade100 : null,
+                                  onPressed: () async {
+                                    setState(() {
+                                      _modelController.text = m;
+                                      _selectedModel = m;
+                                    });
+                                    await SecureStorageService.instance.setSelectedModel(m, provider: _selectedProvider);
+                                  },
+                                ),
+                              );
+                            }).toList(),
+                          ),
                         ),
 
                         const SizedBox(height: 16),

@@ -17,7 +17,7 @@ from pypdf import PdfReader
 
 # Constantes
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 FAST_MODEL = "llama-3.1-8b-instant"
 DEFAULT_PAGE_COUNT = 3
 DB_PATH = "test_library.db"
