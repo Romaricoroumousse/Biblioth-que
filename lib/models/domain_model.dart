@@ -27,11 +27,11 @@ class DomainModel {
 
   factory DomainModel.fromMap(Map<String, dynamic> map, {int docCount = 0}) {
     return DomainModel(
-      id: map['id'] as int?,
-      name: map['name'] as String,
+      id: (map['id'] as num?)?.toInt(),
+      name: (map['name'] as String?) ?? 'Inconnu',
       icon: map['icon'] as String?,
       color: map['color'] as String?,
-      isCustom: (map['is_custom'] as int? ?? 0) == 1,
+      isCustom: ((map['is_custom'] as num?)?.toInt() ?? 0) == 1,
       documentCount: docCount,
     );
   }
@@ -78,9 +78,9 @@ class SubdomainModel {
 
   factory SubdomainModel.fromMap(Map<String, dynamic> map, {int docCount = 0}) {
     return SubdomainModel(
-      id: map['id'] as int?,
-      domainId: map['domain_id'] as int,
-      name: map['name'] as String,
+      id: (map['id'] as num?)?.toInt(),
+      domainId: (map['domain_id'] as num?)?.toInt() ?? 0,
+      name: (map['name'] as String?) ?? '',
       documentCount: docCount,
     );
   }

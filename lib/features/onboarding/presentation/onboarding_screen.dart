@@ -4,6 +4,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
+import '../../settings/presentation/groq_guide_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onFinished;
@@ -287,6 +288,41 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           const Text(
             'L\'application prend en charge n\'importe quelle IA (Groq, Google Gemini, OpenAI ChatGPT, DeepSeek, Mistral, OpenRouter ou Ollama local).',
             style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GroqGuideScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.help_outline_rounded, color: Colors.blue.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tutoriel gratuit : Créer un compte Groq & obtenir une clé',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, size: 12, color: Colors.blue.shade700),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
 

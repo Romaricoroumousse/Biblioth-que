@@ -102,7 +102,7 @@ class AiClassificationService {
         customEndpoint: customEndpoint,
       );
     } catch (e) {
-      // En cas d'erreur de quota ou réseau, conserver en statut local
+      // En cas d'erreur de quota ou réseau, conserver en statut local avec le domaine inféré
       final String fallbackDomain = _inferDomainFromFileName(fileName);
       final domainId = await db.getOrCreateDomain(fallbackDomain, isCustom: false);
       final subdomainId = await db.getOrCreateSubdomain(domainId, 'Général');
@@ -119,7 +119,7 @@ class AiClassificationService {
         subdomainId: subdomainId,
         domainName: fallbackDomain,
         subdomainName: 'Général',
-        summary: 'Document répertorié. Échec de l\'analyse IA : $e',
+        summary: 'Document classé dans $fallbackDomain. En attente d\'analyse IA dès régénération des tokens.',
         keywords: [fileName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '').replaceAll('_', ' ')],
         language: 'français',
         level: 'intermédiaire',
@@ -129,6 +129,10 @@ class AiClassificationService {
         createdAt: existingDoc?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
       );
       final id = await db.insertDocument(failedDoc);
+
+      if (e is AiQuotaExceededException) {
+        rethrow;
+      }
       return failedDoc.copyWith(id: id);
     }
 
@@ -207,5 +211,50 @@ class AiClassificationService {
       // Petite pause pour fluidité de l'interface
       await Future.delayed(const Duration(milliseconds: 150));
     }
+  }
+
+  /// Classement et indexation immédiate en mode 100% hors-ligne (sans appel réseau)
+  Future<DocumentModel> processSingleFileLocal({
+    required File file,
+    required String fileHash,
+  }) async {
+    final db = DatabaseHelper.instance;
+    final stat = await file.stat();
+    final fileName = file.uri.pathSegments.last;
+    final extraction = await PdfExtractorService.instance.extractText(file, pageLimit: 1);
+
+    final existingDoc = await db.getDocumentByHash(fileHash);
+    if (existingDoc != null && existingDoc.aiStatus == 'analyzed') {
+      return existingDoc;
+    }
+
+    final String inferredDomain = _inferDomainFromFileName(fileName);
+    final domainId = await db.getOrCreateDomain(inferredDomain, isCustom: false);
+    final subdomainId = await db.getOrCreateSubdomain(domainId, 'Général');
+
+    final localDoc = DocumentModel(
+      id: existingDoc?.id,
+      filePath: file.path,
+      fileName: fileName,
+      fileHash: fileHash,
+      fileSize: stat.size,
+      pageCount: extraction.pageCount,
+      modifiedDate: stat.modified.millisecondsSinceEpoch,
+      domainId: domainId,
+      subdomainId: subdomainId,
+      domainName: inferredDomain,
+      subdomainName: 'Général',
+      summary: 'Document classé dans $inferredDomain. Prêt pour lecture hors-ligne.',
+      keywords: [fileName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '').replaceAll('_', ' ')],
+      language: 'français',
+      level: 'intermédiaire',
+      isFavorite: existingDoc?.isFavorite ?? false,
+      isExcluded: false,
+      aiStatus: 'pending',
+      createdAt: existingDoc?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
+    );
+
+    final id = await db.insertDocument(localDoc);
+    return localDoc.copyWith(id: id);
   }
 }

@@ -246,4 +246,26 @@ class SecureStorageService {
     current.remove(folderPath);
     await _prefs?.setStringList(AppConstants.keyCustomFolders, current);
   }
+
+  // ==================== THÈMES & EXPÉRIENCE HUMAINE ====================
+
+  Future<String> getSelectedTheme() async {
+    await init();
+    return _prefs?.getString(AppConstants.keySelectedTheme) ?? AppConstants.themeClassicWarm;
+  }
+
+  Future<void> setSelectedTheme(String themeId) async {
+    await init();
+    await _prefs?.setString(AppConstants.keySelectedTheme, themeId);
+  }
+
+  Future<bool> isAutoScanEnabled() async {
+    await init();
+    return _prefs?.getBool(AppConstants.keyAutoScanNewDocs) ?? true;
+  }
+
+  Future<void> setAutoScanEnabled(bool enabled) async {
+    await init();
+    await _prefs?.setBool(AppConstants.keyAutoScanNewDocs, enabled);
+  }
 }

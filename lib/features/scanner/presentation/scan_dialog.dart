@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
 import '../../../services/ai_classification_service.dart';
@@ -86,7 +87,10 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
             : 'Indexation locale (${toAnalyze.length} documents)...';
       });
 
-      // 3. Analyse avec le LLM ou indexation locale
+      bool quotaExceeded = false;
+      int localCount = 0;
+
+      // 3. Analyse avec l'IA ou indexation locale
       for (int i = 0; i < toAnalyze.length; i++) {
         if (_isCancelled) break;
 
@@ -94,26 +98,52 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         setState(() {
           _current = i + 1;
           _currentFileName = item.fileName;
-          _status = hasKey
-              ? 'Classification $providerName (${i + 1}/${toAnalyze.length})'
-              : 'Indexation locale (${i + 1}/${toAnalyze.length})';
+          _status = quotaExceeded
+              ? 'Tokens épuisés (recharge en 1 min) : Classement local (${i + 1}/${toAnalyze.length})'
+              : (hasKey
+                  ? 'Classification avec $providerName (${i + 1}/${toAnalyze.length})'
+                  : 'Classement local sans IA (${i + 1}/${toAnalyze.length})');
         });
 
         try {
-          await AiClassificationService.instance.processSingleFile(
-            file: item.file,
-            fileHash: item.fileHash,
-          );
-          _newAnalyzedCount++;
-        } catch (_) {}
+          if (quotaExceeded) {
+            await AiClassificationService.instance.processSingleFileLocal(
+              file: item.file,
+              fileHash: item.fileHash,
+            );
+            localCount++;
+          } else {
+            await AiClassificationService.instance.processSingleFile(
+              file: item.file,
+              fileHash: item.fileHash,
+            );
+            _newAnalyzedCount++;
+          }
+        } on AiQuotaExceededException {
+          quotaExceeded = true;
+          localCount++;
+        } catch (_) {
+          // Si une erreur inattendue survient, on classe le document localement sans le perdre
+          try {
+            await AiClassificationService.instance.processSingleFileLocal(
+              file: item.file,
+              fileHash: item.fileHash,
+            );
+            localCount++;
+          } catch (_) {}
+        }
 
-        await Future.delayed(const Duration(milliseconds: 150));
+        await Future.delayed(const Duration(milliseconds: 100));
       }
 
       if (mounted) {
         setState(() {
           _isFinished = true;
-          _status = 'Scan terminé avec succès !';
+          if (quotaExceeded) {
+            _status = 'Scan terminé ! Limite de tokens atteinte : vos documents restants ont été rangés localement et seront analysés automatiquement dès que vos tokens se rechargent.';
+          } else {
+            _status = 'Scan et classement terminés avec succès !';
+          }
         });
       }
     } catch (e) {

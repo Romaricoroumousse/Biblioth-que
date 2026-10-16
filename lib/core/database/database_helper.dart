@@ -443,16 +443,41 @@ class DatabaseHelper {
     final db = await instance.database;
     final totalDocsRes = await db.rawQuery('SELECT COUNT(*) as count, SUM(file_size) as total_size FROM documents WHERE is_excluded = 0');
     final analyzedDocsRes = await db.rawQuery("SELECT COUNT(*) as count FROM documents WHERE ai_status = 'analyzed' AND is_excluded = 0");
+    final pendingDocsRes = await db.rawQuery("SELECT COUNT(*) as count FROM documents WHERE ai_status = 'pending' AND is_excluded = 0");
     final totalDomainsRes = await db.rawQuery('SELECT COUNT(DISTINCT domain_id) as count FROM documents WHERE is_excluded = 0 AND domain_id IS NOT NULL');
     final totalFavoritesRes = await db.rawQuery('SELECT COUNT(*) as count FROM documents WHERE is_favorite = 1 AND is_excluded = 0');
 
+    final rawSize = totalDocsRes.isNotEmpty ? totalDocsRes.first['total_size'] : null;
+    final totalSize = rawSize != null ? (rawSize as num).toInt() : 0;
+
     return {
-      'totalDocs': totalDocsRes.first['count'] as int? ?? 0,
-      'totalSize': totalDocsRes.first['total_size'] as int? ?? 0,
-      'totalAnalyzed': analyzedDocsRes.first['count'] as int? ?? 0,
-      'totalDomains': totalDomainsRes.first['count'] as int? ?? 0,
-      'totalFavorites': totalFavoritesRes.first['count'] as int? ?? 0,
+      'totalDocs': (totalDocsRes.first['count'] as num?)?.toInt() ?? 0,
+      'totalSize': totalSize,
+      'totalAnalyzed': (analyzedDocsRes.first['count'] as num?)?.toInt() ?? 0,
+      'totalPending': (pendingDocsRes.first['count'] as num?)?.toInt() ?? 0,
+      'totalDomains': (totalDomainsRes.first['count'] as num?)?.toInt() ?? 0,
+      'totalFavorites': (totalFavoritesRes.first['count'] as num?)?.toInt() ?? 0,
     };
+  }
+
+  Future<List<DocumentModel>> getPendingDocuments({int limit = 50}) async {
+    final db = await instance.database;
+    final res = await db.rawQuery('''
+      SELECT doc.*, d.name as domain_name, s.name as subdomain_name
+      FROM documents doc
+      LEFT JOIN domains d ON doc.domain_id = d.id
+      LEFT JOIN subdomains s ON doc.subdomain_id = s.id
+      WHERE doc.ai_status = 'pending' AND doc.is_excluded = 0
+      ORDER BY doc.created_at DESC
+      LIMIT ?
+    ''', [limit]);
+    return res.map((m) => DocumentModel.fromMap(m)).toList();
+  }
+
+  Future<int> countPendingDocuments() async {
+    final db = await instance.database;
+    final res = await db.rawQuery("SELECT COUNT(*) as count FROM documents WHERE ai_status = 'pending' AND is_excluded = 0");
+    return (res.first['count'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> deleteDocument(int docId) async {

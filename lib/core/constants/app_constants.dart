@@ -178,6 +178,15 @@ class AppConstants {
   static const String keyPrivacyAccepted = 'privacy_accepted';
   static const String keyOnboardingCompleted = 'onboarding_completed';
   static const String keyCustomFolders = 'custom_scan_folders';
+  static const String keySelectedTheme = 'selected_theme';
+  static const String keyAutoScanNewDocs = 'auto_scan_new_docs';
+
+  // Identifiants des thèmes humains
+  static const String themeClassicWarm = 'classic_warm'; // Bibliothèque Classique & Papier chaud
+  static const String themeSageNature = 'sage_nature';   // Sauge & Lin apaisant
+  static const String themeOceanBlue = 'ocean_blue';     // Bleu Nuit & Océan
+  static const String themeCoffeeLatte = 'coffee_latte'; // Café Latte & Terre d'Ocre
+  static const String themeVelvetDark = 'velvet_dark';   // Nuit Velours & Ambre
 
   // Dossiers Android par défaut à inspecter
   static const List<String> defaultAndroidScanPaths = [

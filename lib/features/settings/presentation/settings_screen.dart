@@ -4,7 +4,10 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_logo.dart';
+import '../../../main.dart';
+import 'groq_guide_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -27,6 +30,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _scanPageCount = AppConstants.defaultScanPageCount;
   List<String> _customFolders = [];
   Map<String, dynamic> _stats = {};
+  String _selectedTheme = AppConstants.themeClassicWarm;
+  bool _autoScanNewDocs = true;
   bool _isLoading = true;
 
   @override
@@ -44,30 +49,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final storage = SecureStorageService.instance;
-    final db = DatabaseHelper.instance;
+    try {
+      final storage = SecureStorageService.instance;
+      final db = DatabaseHelper.instance;
 
-    final prov = await storage.getActiveProvider();
-    final key = await storage.getApiKey(provider: prov) ?? '';
-    final model = await storage.getSelectedModel(provider: prov);
-    final endpoint = await storage.getCustomEndpoint();
-    final pages = await storage.getScanPageCount();
-    final folders = await storage.getCustomScanFolders();
-    final stats = await db.getLibraryStats();
+      final prov = await storage.getActiveProvider();
+      final key = await storage.getApiKey(provider: prov) ?? '';
+      final model = await storage.getSelectedModel(provider: prov);
+      final endpoint = await storage.getCustomEndpoint();
+      final pages = await storage.getScanPageCount();
+      final folders = await storage.getCustomScanFolders();
+      final theme = await storage.getSelectedTheme();
+      final autoScan = await storage.isAutoScanEnabled();
+      final stats = await db.getLibraryStats();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _selectedProvider = prov;
-      _apiKeyController.text = key;
-      _selectedModel = model;
-      _modelController.text = model;
-      _endpointController.text = endpoint;
-      _scanPageCount = pages;
-      _customFolders = folders;
-      _stats = stats;
-      _isLoading = false;
-    });
+      setState(() {
+        _selectedProvider = prov;
+        _apiKeyController.text = key;
+        _selectedModel = model;
+        _modelController.text = model;
+        _endpointController.text = endpoint;
+        _scanPageCount = pages;
+        _customFolders = folders;
+        _selectedTheme = theme;
+        _autoScanNewDocs = autoScan;
+        _stats = stats;
+      });
+    } catch (e) {
+      debugPrint('Error loading settings: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Future<void> _onProviderChanged(String newProvider) async {
@@ -223,6 +239,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Guide Groq gratuit
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const GroqGuideScreen()),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.help_outline_rounded, color: Colors.blue.shade700, size: 22),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Guide : Obtenir une clé Groq & modèles actifs',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade900,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Tutoriel pas à pas gratuit, quotas et choix du modèle.',
+                                        style: TextStyle(fontSize: 11, color: Colors.blue.shade800),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.arrow_forward_ios, size: 13, color: Colors.blue.shade700),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
                         const Text(
                           'Fournisseur d\'IA utilisé :',
                           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
@@ -361,6 +423,146 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // 3. THÈMES & COULEURS HUMAINES
+                _buildSectionHeader('Thèmes & Ambiance de lecture', Icons.palette_outlined),
+                Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ambiance visuelle soignée et chaleureuse, conçue pour un confort de lecture optimal :',
+                          style: TextStyle(fontSize: 12.5, color: Colors.black87),
+                        ),
+                        const SizedBox(height: 14),
+                        ...AppTheme.availableThemes.map((opt) {
+                          final isSelected = _selectedTheme == opt.id;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+                                width: isSelected ? 2 : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              color: isSelected
+                                  ? Theme.of(context).primaryColor.withOpacity(0.06)
+                                  : null,
+                            ),
+                            child: ListTile(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              leading: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: opt.previewPrimary,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.black12),
+                                ),
+                                child: Center(
+                                  child: Container(
+                                    width: 14,
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: opt.previewBackground,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                opt.name,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                              subtitle: Text(
+                                opt.description,
+                                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                              ),
+                              trailing: isSelected
+                                  ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
+                                  : null,
+                              onTap: () async {
+                                setState(() => _selectedTheme = opt.id);
+                                await SecureStorageService.instance.setSelectedTheme(opt.id);
+                                if (context.mounted) {
+                                  SmartPdfLibraryApp.updateTheme(context, opt.id);
+                                }
+                              },
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // 4. AUTOMATISATION & 100% HORS-LIGNE
+                _buildSectionHeader('Automatisation & Mode Hors-ligne', Icons.auto_mode_outlined),
+                Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: SwitchListTile(
+                      title: const Text(
+                        'Détection auto des nouveaux PDFs',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        'Dès qu\'un fichier PDF entre dans le téléphone (WhatsApp, Téléchargements...), il est automatiquement répertorié dès l\'ouverture de l\'application.',
+                        style: TextStyle(fontSize: 11.5),
+                      ),
+                      value: _autoScanNewDocs,
+                      onChanged: (val) async {
+                        setState(() => _autoScanNewDocs = val);
+                        await SecureStorageService.instance.setAutoScanEnabled(val);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_off_outlined, color: Colors.green.shade700, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bibliothèque 100% Hors-Ligne',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                                color: Colors.green.shade900,
+                              ),
+                            ),
+                            Text(
+                              'Seule la première analyse IA nécessite internet. Une fois vos documents indexés, la recherche plein-texte SQLite, la consultation et la lecture fonctionnent totalement hors-ligne.',
+                              style: TextStyle(fontSize: 11, color: Colors.green.shade800),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 

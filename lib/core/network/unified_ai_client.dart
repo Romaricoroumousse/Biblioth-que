@@ -50,6 +50,16 @@ class AiTestResult {
   });
 }
 
+class AiQuotaExceededException implements Exception {
+  final String message;
+  final int? retryAfterSeconds;
+
+  AiQuotaExceededException(this.message, {this.retryAfterSeconds});
+
+  @override
+  String toString() => message;
+}
+
 class UnifiedAiClient {
   static final UnifiedAiClient instance = UnifiedAiClient._init();
   UnifiedAiClient._init();
@@ -278,10 +288,6 @@ $extractedText
       'max_tokens': 1000,
     };
 
-    if (provider == AppConstants.providerGroq || provider == AppConstants.providerOpenAi) {
-      payload['response_format'] = {'type': 'json_object'};
-    }
-
     final response = await http
         .post(
           Uri.parse(endpoint),
@@ -295,6 +301,17 @@ $extractedText
       final content = decodedBody['choices'][0]['message']['content'];
       final jsonResult = _extractJson(content.toString());
       return AiAnalysisResult.fromJson(jsonResult);
+    } else if (response.statusCode == 429) {
+      // Limite de tokens / requêtes atteinte chez le fournisseur
+      int? retrySeconds;
+      final retryHeader = response.headers['retry-after'];
+      if (retryHeader != null) {
+        retrySeconds = int.tryParse(retryHeader);
+      }
+      throw AiQuotaExceededException(
+        'Limite de tokens atteinte sur $provider. Régénération automatique en cours...',
+        retryAfterSeconds: retrySeconds ?? 15,
+      );
     } else if (response.statusCode == 404 && provider == AppConstants.providerGroq && chosenModel != 'meta-llama/llama-4-scout-17b-16e-instruct') {
       // Re-tentative automatique avec le nouveau modèle Groq
       return await analyzeDocument(

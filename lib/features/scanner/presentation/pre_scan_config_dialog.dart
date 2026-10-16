@@ -3,6 +3,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
+import '../../settings/presentation/groq_guide_screen.dart';
 
 class PreScanConfigDialog extends StatefulWidget {
   const PreScanConfigDialog({super.key});
@@ -168,7 +169,35 @@ class _PreScanConfigDialogState extends State<PreScanConfigDialog> {
               'Pour analyser et résumer automatiquement vos PDF, choisissez votre service IA :',
               style: TextStyle(fontSize: 13, color: Colors.black87),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const GroqGuideScreen()),
+                );
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.help_outline, size: 16, color: Theme.of(context).primaryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Guide gratuit : Obtenir une clé Groq & modèles',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).primaryColor,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
 
             // Sélecteur de fournisseur
             DropdownButtonFormField<String>(

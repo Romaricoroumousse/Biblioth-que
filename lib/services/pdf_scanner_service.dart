@@ -32,9 +32,15 @@ class PdfScannerService {
   Future<List<String>> getSearchDirectories() async {
     final List<String> paths = [];
 
-    // Dossiers par défaut
+    // Racine principale de stockage Android si accessible
+    const rootPath = '/storage/emulated/0';
+    if (await Directory(rootPath).exists()) {
+      paths.add(rootPath);
+    }
+
+    // Dossiers spécifiques par défaut
     for (var defaultPath in AppConstants.defaultAndroidScanPaths) {
-      if (await Directory(defaultPath).exists()) {
+      if (!paths.contains(defaultPath) && await Directory(defaultPath).exists()) {
         paths.add(defaultPath);
       }
     }
@@ -50,27 +56,56 @@ class PdfScannerService {
     return paths;
   }
 
-  /// Recherche récursive de tous les fichiers .pdf
+  /// Recherche robuste de tous les fichiers .pdf via parcours par file d'attente (BFS)
+  /// Ignore les répertoires système restreints (Android/data, obb) sans interrompre le scan
   Future<List<File>> discoverPdfFiles({List<String>? targetDirectories}) async {
     final directories = targetDirectories ?? await getSearchDirectories();
     final List<File> pdfFiles = [];
-    final Set<String> visitedPaths = {};
+    final Set<String> visitedFilePaths = {};
+    final Set<String> visitedDirPaths = {};
 
-    for (var dirPath in directories) {
-      try {
-        final dir = Directory(dirPath);
-        if (!await dir.exists()) continue;
+    for (var rootPath in directories) {
+      final rootDir = Directory(rootPath);
+      if (!await rootDir.exists()) continue;
 
-        await for (var entity in dir.list(recursive: true, followLinks: false)) {
-          if (entity is File && entity.path.toLowerCase().endsWith('.pdf')) {
-            if (!visitedPaths.contains(entity.path)) {
-              visitedPaths.add(entity.path);
-              pdfFiles.add(entity);
+      final List<Directory> queue = [rootDir];
+
+      while (queue.isNotEmpty) {
+        final currentDir = queue.removeAt(0);
+        if (!visitedDirPaths.add(currentDir.path)) continue;
+
+        try {
+          final List<FileSystemEntity> entities = await currentDir.list(followLinks: false).toList();
+
+          for (final entity in entities) {
+            if (entity is File) {
+              final pathLower = entity.path.toLowerCase();
+              if (pathLower.endsWith('.pdf')) {
+                if (visitedFilePaths.add(entity.path)) {
+                  pdfFiles.add(entity);
+                }
+              }
+            } else if (entity is Directory) {
+              final dirName = entity.uri.pathSegments.length >= 2
+                  ? entity.uri.pathSegments[entity.uri.pathSegments.length - 2]
+                  : entity.path.split(Platform.pathSeparator).last;
+
+              // Ignorer les répertoires système Android inaccessibles et dossiers cachés
+              final lowerName = dirName.toLowerCase();
+              if (lowerName == 'android' ||
+                  lowerName == 'data' ||
+                  lowerName == 'obb' ||
+                  lowerName.startsWith('.') ||
+                  lowerName == '.thumbnails') {
+                continue;
+              }
+
+              queue.add(entity);
             }
           }
+        } catch (_) {
+          // Ignorer silencieusement ce sous-dossier restreint et continuer la file
         }
-      } catch (_) {
-        // Ignorer les dossiers sans droit d'accès
       }
     }
 
@@ -92,7 +127,7 @@ class PdfScannerService {
         final fileName = file.uri.pathSegments.last;
         final hash = await FileHash.calculate(file);
 
-        // Vérifier si le document existe déjà avec ce hash
+        // Vérifier si le document existe déjà avec ce hash et est complètement analysé
         final existingDoc = await db.getDocumentByHash(hash);
         final isIndexed = existingDoc != null && existingDoc.aiStatus == 'analyzed';
 
