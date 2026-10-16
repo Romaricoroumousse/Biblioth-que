@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
@@ -8,8 +10,13 @@ import '../../../services/pdf_scanner_service.dart';
 
 class ScanProgressDialog extends StatefulWidget {
   final VoidCallback onFinished;
+  final List<File>? initialFiles;
 
-  const ScanProgressDialog({super.key, required this.onFinished});
+  const ScanProgressDialog({
+    super.key,
+    required this.onFinished,
+    this.initialFiles,
+  });
 
   @override
   State<ScanProgressDialog> createState() => _ScanProgressDialogState();
@@ -21,6 +28,7 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
   int _total = 0;
   String _currentFileName = '';
   bool _isFinished = false;
+  bool _isEmptyResult = false;
   bool _isCancelled = false;
   int _newAnalyzedCount = 0;
   int _alreadyIndexedCount = 0;
@@ -31,16 +39,27 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
     _startScanProcess();
   }
 
-  Future<void> _startScanProcess() async {
+  Future<void> _startScanProcess({List<File>? specificFiles}) async {
+    setState(() {
+      _isFinished = false;
+      _isEmptyResult = false;
+      _current = 0;
+      _total = 0;
+      _status = 'Recherche des fichiers PDF sur votre appareil...';
+    });
+
     try {
-      // 1. Découverte des fichiers
-      final List<File> files = await PdfScannerService.instance.discoverPdfFiles();
+      // 1. Découverte des fichiers ou utilisation des fichiers fournis
+      final List<File> files = specificFiles ??
+          widget.initialFiles ??
+          await PdfScannerService.instance.discoverPdfFiles();
 
       if (_isCancelled) return;
 
       if (files.isEmpty) {
         setState(() {
-          _status = 'Aucun fichier PDF trouvé dans les dossiers explorés.';
+          _status = 'Aucun fichier PDF trouvé automatiquement.';
+          _isEmptyResult = true;
           _isFinished = true;
         });
         return;
@@ -156,6 +175,39 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
     }
   }
 
+  Future<void> _pickAndScanFiles() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+      allowMultiple: true,
+    );
+    if (result != null && result.paths.isNotEmpty) {
+      final selected = result.paths
+          .whereType<String>()
+          .map((p) => File(p))
+          .where((f) => f.existsSync())
+          .toList();
+      if (selected.isNotEmpty) {
+        _startScanProcess(specificFiles: selected);
+      }
+    }
+  }
+
+  Future<void> _pickAndScanFolder() async {
+    final dir = await FilePicker.platform.getDirectoryPath();
+    if (dir != null) {
+      await SecureStorageService.instance.addCustomScanFolder(dir);
+      final discovered = await PdfScannerService.instance.discoverPdfFiles(targetDirectories: [dir]);
+      if (discovered.isNotEmpty) {
+        _startScanProcess(specificFiles: discovered);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucun PDF trouvé dans ce dossier sélectionné.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final double progress = _total > 0 ? (_current / _total) : 0.0;
@@ -176,72 +228,139 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _status,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 16),
-            if (!_isFinished && _total > 0) ...[
-              LinearProgressIndicator(
-                value: progress > 1.0 ? 1.0 : progress,
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _status,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '$_current / $_total',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                  Text(
-                    '${(progress * 100).toInt()}%',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              if (_currentFileName.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _currentFileName,
-                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 16),
+              if (!_isFinished && _total > 0) ...[
+                LinearProgressIndicator(
+                  value: progress > 1.0 ? 1.0 : progress,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              ],
-            ] else if (!_isFinished) ...[
-              const Center(child: CircularProgressIndicator()),
-            ],
-            if (_isFinished) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '• $_newAnalyzedCount nouveau(x) document(s) répertorié(s)',
-                      style: TextStyle(fontSize: 13, color: Colors.green.shade900),
+                      '$_current / $_total',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      '• $_alreadyIndexedCount document(s) déjà présent(s)',
-                      style: TextStyle(fontSize: 13, color: Colors.green.shade900),
+                      '${(progress * 100).toInt()}%',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
-              ),
+                if (_currentFileName.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _currentFileName,
+                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ] else if (!_isFinished) ...[
+                const Center(child: CircularProgressIndicator()),
+              ],
+
+              // Si 0 document trouvé automatiquement
+              if (_isEmptyResult) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.amber.shade900, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Autorisation ou emplacement des fichiers',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Android protège les dossiers de votre appareil. Vous pouvez choisir vos PDF directement ou autoriser l\'application :',
+                        style: TextStyle(fontSize: 12, color: Colors.black87),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ElevatedButton.icon(
+                  onPressed: _pickAndScanFiles,
+                  icon: const Icon(Icons.file_upload_outlined, size: 18),
+                  label: const Text('Sélectionner des PDF manuellement'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(42),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _pickAndScanFolder,
+                  icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+                  label: const Text('Choisir un dossier (ex: Téléchargements)'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                if (Platform.isAndroid) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => openAppSettings(),
+                    icon: const Icon(Icons.settings_outlined, size: 18),
+                    label: const Text('Activer "Accès aux fichiers" dans Paramètres'),
+                  ),
+                ],
+              ],
+
+              // Résultat après scan réussi
+              if (_isFinished && !_isEmptyResult) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '• $_newAnalyzedCount nouveau(x) document(s) répertorié(s)',
+                        style: TextStyle(fontSize: 13, color: Colors.green.shade900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '• $_alreadyIndexedCount document(s) déjà présent(s)',
+                        style: TextStyle(fontSize: 13, color: Colors.green.shade900),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
         actions: [
           if (!_isFinished)

@@ -28,37 +28,73 @@ class PdfScannerService {
   static final PdfScannerService instance = PdfScannerService._init();
   PdfScannerService._init();
 
-  /// Récupère la liste de tous les dossiers à explorer
+  /// Récupère la liste de tous les dossiers à explorer (chemins standards, cartes SD et dossiers utilisateur)
   Future<List<String>> getSearchDirectories() async {
     final List<String> paths = [];
 
-    // Racine principale de stockage Android si accessible
-    const rootPath = '/storage/emulated/0';
-    if (await Directory(rootPath).exists()) {
-      paths.add(rootPath);
-    }
-
-    // Dossiers spécifiques par défaut
-    for (var defaultPath in AppConstants.defaultAndroidScanPaths) {
-      if (!paths.contains(defaultPath) && await Directory(defaultPath).exists()) {
-        paths.add(defaultPath);
+    void addDirIfValid(String p) {
+      if (!paths.contains(p)) {
+        try {
+          final d = Directory(p);
+          if (d.existsSync()) {
+            paths.add(p);
+          }
+        } catch (_) {}
       }
     }
 
-    // Dossiers configurés par l'utilisateur
+    // 1. Dossiers prioritaires à fort taux de PDF sur Android
+    for (var defaultPath in AppConstants.defaultAndroidScanPaths) {
+      addDirIfValid(defaultPath);
+    }
+
+    // Variantes de noms courantes sur différentes marques (Samsung, Xiaomi, OnePlus, etc.)
+    final extraCommonPaths = [
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Downloads',
+      '/storage/emulated/0/Documents',
+      '/storage/emulated/0/Document',
+      '/storage/emulated/0/Books',
+      '/storage/emulated/0/Book',
+      '/storage/emulated/0/PDF',
+      '/storage/emulated/0/Pdfs',
+      '/storage/emulated/0/DCIM',
+      '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents',
+      '/storage/emulated/0/WhatsApp/Media/WhatsApp Documents',
+      '/storage/emulated/0/Telegram/Telegram Documents',
+      '/storage/emulated/0/Android/media/org.telegram.messenger/Telegram/Telegram Documents',
+      '/sdcard/Download',
+      '/sdcard/Downloads',
+      '/sdcard/Documents',
+      '/sdcard/Books',
+    ];
+    for (var p in extraCommonPaths) {
+      addDirIfValid(p);
+    }
+
+    // 2. Dossiers configurés manuellement par l'utilisateur
     final customFolders = await SecureStorageService.instance.getCustomScanFolders();
     for (var customPath in customFolders) {
-      if (!paths.contains(customPath) && await Directory(customPath).exists()) {
-        paths.add(customPath);
-      }
+      addDirIfValid(customPath);
     }
+
+    // 3. Racines principales globales (explorées en dernier si besoin)
+    addDirIfValid('/storage/emulated/0');
+    addDirIfValid('/sdcard');
 
     return paths;
   }
 
   /// Recherche robuste de tous les fichiers .pdf via parcours par file d'attente (BFS)
   /// Ignore les répertoires système restreints (Android/data, obb) sans interrompre le scan
-  Future<List<File>> discoverPdfFiles({List<String>? targetDirectories}) async {
+  Future<List<File>> discoverPdfFiles({
+    List<String>? targetDirectories,
+    List<File>? directFiles,
+  }) async {
+    if (directFiles != null && directFiles.isNotEmpty) {
+      return directFiles.where((f) => f.existsSync()).toList();
+    }
+
     final directories = targetDirectories ?? await getSearchDirectories();
     final List<File> pdfFiles = [];
     final Set<String> visitedFilePaths = {};
@@ -66,7 +102,11 @@ class PdfScannerService {
 
     for (var rootPath in directories) {
       final rootDir = Directory(rootPath);
-      if (!await rootDir.exists()) continue;
+      try {
+        if (!rootDir.existsSync()) continue;
+      } catch (_) {
+        continue;
+      }
 
       final List<Directory> queue = [rootDir];
 
@@ -75,9 +115,8 @@ class PdfScannerService {
         if (!visitedDirPaths.add(currentDir.path)) continue;
 
         try {
-          final List<FileSystemEntity> entities = await currentDir.list(followLinks: false).toList();
-
-          for (final entity in entities) {
+          final Stream<FileSystemEntity> stream = currentDir.list(followLinks: false);
+          await for (final entity in stream.handleError((_) {})) {
             if (entity is File) {
               final pathLower = entity.path.toLowerCase();
               if (pathLower.endsWith('.pdf')) {
@@ -86,17 +125,18 @@ class PdfScannerService {
                 }
               }
             } else if (entity is Directory) {
-              final dirName = entity.uri.pathSegments.length >= 2
-                  ? entity.uri.pathSegments[entity.uri.pathSegments.length - 2]
+              final dirName = entity.uri.pathSegments.isNotEmpty
+                  ? entity.uri.pathSegments[entity.uri.pathSegments.length - (entity.uri.pathSegments.last.isEmpty ? 2 : 1)]
                   : entity.path.split(Platform.pathSeparator).last;
 
-              // Ignorer les répertoires système Android inaccessibles et dossiers cachés
               final lowerName = dirName.toLowerCase();
+              // Ignorer les répertoires système Android inaccessibles et dossiers cachés
               if (lowerName == 'android' ||
                   lowerName == 'data' ||
                   lowerName == 'obb' ||
                   lowerName.startsWith('.') ||
-                  lowerName == '.thumbnails') {
+                  lowerName == '.thumbnails' ||
+                  lowerName == 'cache') {
                 continue;
               }
 

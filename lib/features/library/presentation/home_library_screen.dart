@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/database/database_helper.dart';
@@ -117,29 +118,79 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
     }
   }
 
-  /// Déclenche le scan : vérifie les permissions de stockage et propose la config si nécessaire
-  Future<void> _handleScanRequest() async {
-    // 1. Demande d'accès aux fichiers pour Android
-    if (Platform.isAndroid) {
-      bool granted = await Permission.manageExternalStorage.isGranted;
-      if (!granted) {
-        final status = await Permission.manageExternalStorage.request();
-        if (!status.isGranted) {
-          final storageStatus = await Permission.storage.request();
-          if (!storageStatus.isGranted && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('L\'autorisation de stockage est nécessaire pour trouver vos PDF.'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-            return;
-          }
-        }
-      }
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    if (await Permission.manageExternalStorage.isGranted) return true;
+
+    final status = await Permission.manageExternalStorage.request();
+    if (status.isGranted) return true;
+
+    final legacy = await Permission.storage.request();
+    if (legacy.isGranted) return true;
+
+    if (!mounted) return false;
+
+    // Si Android refuse la permission automatique, afficher le dialogue explicatif
+    final bool? shouldOpenSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.folder_shared_outlined, color: Colors.amber, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('Autorisation requise', style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pour analyser et classer les livres PDF de votre téléphone, Android demande d\'activer l\'accès aux fichiers.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Dans l\'écran qui va s\'ouvrir, cochez simplement "Autoriser la gestion de tous les fichiers".',
+              style: TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Choisir manuellement'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ouvrir les Paramètres'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldOpenSettings == true) {
+      await openAppSettings();
+      return true;
     }
 
-    // 2. Vérification de la clé IA
+    return false;
+  }
+
+  /// Déclenche le scan : vérifie les permissions de stockage et propose la config si nécessaire
+  Future<void> _handleScanRequest() async {
+    final hasPerm = await _ensureStoragePermission();
+    if (!hasPerm) {
+      // Si la permission n'est pas accordée, proposer le sélecteur manuel de fichiers
+      _pickAndScanCustomFiles();
+      return;
+    }
+
+    // Vérification de la clé IA
     final hasKey = await SecureStorageService.instance.hasApiKey();
     if (!hasKey) {
       if (!mounted) return;
@@ -154,11 +205,40 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
     _triggerScanDialog();
   }
 
-  void _triggerScanDialog() {
+  Future<void> _pickAndScanCustomFiles() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+      allowMultiple: true,
+    );
+    if (result != null && result.paths.isNotEmpty) {
+      final selected = result.paths
+          .whereType<String>()
+          .map((p) => File(p))
+          .where((f) => f.existsSync())
+          .toList();
+      if (selected.isNotEmpty) {
+        final hasKey = await SecureStorageService.instance.hasApiKey();
+        if (!hasKey) {
+          if (!mounted) return;
+          final proceed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => const PreScanConfigDialog(),
+          );
+          if (proceed != true) return;
+        }
+
+        _triggerScanDialog(initialFiles: selected);
+      }
+    }
+  }
+
+  void _triggerScanDialog({List<File>? initialFiles}) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => ScanProgressDialog(
+        initialFiles: initialFiles,
         onFinished: () {
           _loadLibraryData();
         },
@@ -317,6 +397,16 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
                 label: const Text('Détecter et classer mes PDF'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _pickAndScanCustomFiles,
+                icon: const Icon(Icons.file_upload_outlined),
+                label: const Text('Sélectionner des PDF manuellement'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),

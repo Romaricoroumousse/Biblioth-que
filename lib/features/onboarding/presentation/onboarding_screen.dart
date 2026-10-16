@@ -166,11 +166,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     });
 
     if (!status.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('L\'autorisation est nécessaire pour détecter les PDF de votre appareil.'),
+      final shouldOpen = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Autorisation des fichiers requise'),
+          content: const Text(
+            'Pour détecter vos PDF automatiquement, Android nécessite l\'accès aux fichiers. Souhaitez-vous ouvrir les paramètres pour l\'activer ?',
+            style: TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Plus tard'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ouvrir les Paramètres'),
+            ),
+          ],
         ),
       );
+
+      if (shouldOpen == true) {
+        await openAppSettings();
+      }
     }
   }
 
@@ -621,17 +641,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _storagePermissionGranted
-                      ? () => _pageController.nextPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          )
-                      : null,
+                  onPressed: () => _pageController.nextPage(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  ),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Continuer'),
+                  child: Text(_storagePermissionGranted ? 'Continuer' : 'Passer cette étape'),
                 ),
               ),
             ],
