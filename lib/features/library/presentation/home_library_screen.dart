@@ -73,13 +73,28 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
       final newCandidates = candidates.where((c) => !c.isAlreadyIndexed).toList();
 
       if (newCandidates.isNotEmpty) {
+        final hasKey = await SecureStorageService.instance.hasApiKey();
         for (final item in newCandidates) {
           try {
-            await AiClassificationService.instance.processSingleFileLocal(
-              file: item.file,
-              fileHash: item.fileHash,
-            );
-          } catch (_) {}
+            if (hasKey) {
+              await AiClassificationService.instance.processSingleFile(
+                file: item.file,
+                fileHash: item.fileHash,
+              );
+            } else {
+              await AiClassificationService.instance.processSingleFileLocal(
+                file: item.file,
+                fileHash: item.fileHash,
+              );
+            }
+          } catch (_) {
+            try {
+              await AiClassificationService.instance.processSingleFileLocal(
+                file: item.file,
+                fileHash: item.fileHash,
+              );
+            } catch (_) {}
+          }
         }
         if (mounted) {
           _loadLibraryData();

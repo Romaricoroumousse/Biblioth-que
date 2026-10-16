@@ -165,7 +165,7 @@ class AppConstants {
   static const int defaultScanPageCount = 3;
   static const int minScanPageCount = 1;
   static const int maxScanPageCount = 10;
-  static const int maxTextCharsForAi = 8000;
+  static const int maxTextCharsForAi = 3500;
 
   // Clés de stockage
   static const String keyActiveProvider = 'active_ai_provider';

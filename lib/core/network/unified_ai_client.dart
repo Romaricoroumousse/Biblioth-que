@@ -278,63 +278,85 @@ $extractedText
       headers['Authorization'] = 'Bearer ${apiKey.trim()}';
     }
 
-    final payload = {
-      'model': chosenModel,
-      'messages': [
-        {'role': 'system', 'content': systemPrompt},
-        {'role': 'user', 'content': userPrompt},
-      ],
-      'temperature': 0.1,
-      'max_tokens': 1000,
-    };
+    // Fonction interne pour effectuer la requête avec un modèle donné
+    Future<AiAnalysisResult> executeCall(String targetModel, {bool unifiedMessages = false}) async {
+      final List<Map<String, String>> messages = unifiedMessages
+          ? [
+              {'role': 'user', 'content': '$systemPrompt\n\n---\n\n$userPrompt'}
+            ]
+          : [
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': userPrompt},
+            ];
 
-    final response = await http
-        .post(
-          Uri.parse(endpoint),
-          headers: headers,
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 35));
+      final payload = {
+        'model': targetModel,
+        'messages': messages,
+        'temperature': 0.1,
+        'max_tokens': 600,
+      };
 
-    if (response.statusCode == 200) {
-      final decodedBody = jsonDecode(utf8.decode(response.bodyBytes));
-      final content = decodedBody['choices'][0]['message']['content'];
-      final jsonResult = _extractJson(content.toString());
-      return AiAnalysisResult.fromJson(jsonResult);
-    } else if (response.statusCode == 429) {
-      // Limite de tokens / requêtes atteinte chez le fournisseur
-      int? retrySeconds;
-      final retryHeader = response.headers['retry-after'];
-      if (retryHeader != null) {
-        retrySeconds = int.tryParse(retryHeader);
+      final response = await http
+          .post(
+            Uri.parse(endpoint),
+            headers: headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 35));
+
+      if (response.statusCode == 200) {
+        final decodedBody = jsonDecode(utf8.decode(response.bodyBytes));
+        final content = decodedBody['choices'][0]['message']['content'];
+        final jsonResult = _extractJson(content.toString());
+        return AiAnalysisResult.fromJson(jsonResult);
+      } else if (response.statusCode == 429) {
+        int? retrySeconds;
+        final retryHeader = response.headers['retry-after'];
+        if (retryHeader != null) {
+          retrySeconds = int.tryParse(retryHeader);
+        }
+        throw AiQuotaExceededException(
+          'Limite de tokens atteinte sur $provider. Régénération automatique en cours...',
+          retryAfterSeconds: retrySeconds ?? 15,
+        );
+      } else if (response.statusCode == 400 && !unifiedMessages) {
+        // Certains modèles n'acceptent pas le rôle "system", retenter avec message unique
+        return await executeCall(targetModel, unifiedMessages: true);
+      } else {
+        final errorBody = utf8.decode(response.bodyBytes);
+        throw Exception('Erreur API ($provider/$targetModel - ${response.statusCode}) : $errorBody');
       }
-      throw AiQuotaExceededException(
-        'Limite de tokens atteinte sur $provider. Régénération automatique en cours...',
-        retryAfterSeconds: retrySeconds ?? 15,
-      );
-    } else if (response.statusCode == 404 && provider == AppConstants.providerGroq && chosenModel != 'meta-llama/llama-4-scout-17b-16e-instruct') {
-      // Re-tentative automatique avec le nouveau modèle Groq
-      return await analyzeDocument(
-        provider: provider,
-        apiKey: apiKey,
-        fileName: fileName,
-        extractedText: extractedText,
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        customEndpoint: customEndpoint,
-      );
-    } else if (response.statusCode == 404 && provider == AppConstants.providerGemini && chosenModel != 'gemini-2.0-flash') {
-      // Re-tentative automatique avec le nouveau modèle Gemini
-      return await analyzeDocument(
-        provider: provider,
-        apiKey: apiKey,
-        fileName: fileName,
-        extractedText: extractedText,
-        model: 'gemini-2.0-flash',
-        customEndpoint: customEndpoint,
-      );
-    } else {
-      final errorBody = utf8.decode(response.bodyBytes);
-      throw Exception('Erreur API ($provider - ${response.statusCode}) : $errorBody');
+    }
+
+    // 1. Première tentative avec le modèle sélectionné
+    try {
+      return await executeCall(chosenModel);
+    } catch (e) {
+      if (e is AiQuotaExceededException) rethrow;
+
+      // 2. Modèles de secours éprouvés selon le fournisseur
+      List<String> fallbacks = [];
+      if (provider == AppConstants.providerGroq) {
+        fallbacks = [
+          'llama-3.1-8b-instant', // Le plus rapide, fiable et avec le quota TPM le plus élevé sur Groq
+          'llama-3.3-70b-versatile',
+          'meta-llama/llama-4-scout-17b-16e-instruct',
+        ];
+      } else if (provider == AppConstants.providerGemini) {
+        fallbacks = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+      }
+
+      for (final fb in fallbacks) {
+        if (fb != chosenModel) {
+          try {
+            return await executeCall(fb);
+          } catch (fbErr) {
+            if (fbErr is AiQuotaExceededException) rethrow;
+          }
+        }
+      }
+
+      rethrow;
     }
   }
 

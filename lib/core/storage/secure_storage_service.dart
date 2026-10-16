@@ -51,22 +51,47 @@ class SecureStorageService {
 
     try {
       final key = await _secureStorage.read(key: storageKey);
-      if (key != null && key.isNotEmpty) return key;
+      if (key != null && key.trim().isNotEmpty) return key.trim();
     } catch (e) {
       debugPrint('Fallback lecture sécurisée vers SharedPreferences: $e');
     }
 
     // Fallback SharedPreferences
     final prefKey = _prefs?.getString(storageKey);
-    if (prefKey != null && prefKey.isNotEmpty) return prefKey;
+    if (prefKey != null && prefKey.trim().isNotEmpty) return prefKey.trim();
 
     // Rétrocompatibilité Groq
     if (prov == AppConstants.providerGroq) {
       try {
         final legacyKey = await _secureStorage.read(key: AppConstants.keyGroqApiKey);
-        if (legacyKey != null && legacyKey.isNotEmpty) return legacyKey;
+        if (legacyKey != null && legacyKey.trim().isNotEmpty) return legacyKey.trim();
       } catch (_) {}
-      return _prefs?.getString(AppConstants.keyGroqApiKey);
+      final legacyPref = _prefs?.getString(AppConstants.keyGroqApiKey);
+      if (legacyPref != null && legacyPref.trim().isNotEmpty) return legacyPref.trim();
+    }
+
+    // Si aucune clé trouvée pour ce fournisseur : recherche globale sur tous les fournisseurs
+    for (final p in AppConstants.supportedProviders) {
+      final altKey = '${AppConstants.keyAiApiKey}_${p.id}';
+      try {
+        final altVal = await _secureStorage.read(key: altKey);
+        if (altVal != null && altVal.trim().isNotEmpty) {
+          await setActiveProvider(p.id);
+          return altVal.trim();
+        }
+      } catch (_) {}
+      final altPref = _prefs?.getString(altKey);
+      if (altPref != null && altPref.trim().isNotEmpty) {
+        await setActiveProvider(p.id);
+        return altPref.trim();
+      }
+    }
+
+    // Vérifier aussi la clé legacy générale
+    final anyLegacy = _prefs?.getString(AppConstants.keyGroqApiKey);
+    if (anyLegacy != null && anyLegacy.trim().isNotEmpty) {
+      await setActiveProvider(AppConstants.providerGroq);
+      return anyLegacy.trim();
     }
 
     return null;

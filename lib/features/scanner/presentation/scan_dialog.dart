@@ -27,11 +27,15 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
   int _current = 0;
   int _total = 0;
   String _currentFileName = '';
+  String _lastClassifiedInfo = '';
   bool _isFinished = false;
   bool _isEmptyResult = false;
   bool _isCancelled = false;
+  bool _hasKey = false;
   int _newAnalyzedCount = 0;
   int _alreadyIndexedCount = 0;
+  int _localCount = 0;
+  final Map<String, int> _domainCounts = {};
 
   @override
   void initState() {
@@ -40,11 +44,17 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
   }
 
   Future<void> _startScanProcess({List<File>? specificFiles}) async {
+    final hasKey = await SecureStorageService.instance.hasApiKey();
     setState(() {
       _isFinished = false;
       _isEmptyResult = false;
       _current = 0;
       _total = 0;
+      _newAnalyzedCount = 0;
+      _localCount = 0;
+      _domainCounts.clear();
+      _lastClassifiedInfo = '';
+      _hasKey = hasKey;
       _status = 'Recherche des fichiers PDF sur votre appareil...';
     });
 
@@ -95,7 +105,6 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         return;
       }
 
-      final hasKey = await SecureStorageService.instance.hasApiKey();
       final providerName = await SecureStorageService.instance.getActiveProviderName();
 
       setState(() {
@@ -107,7 +116,6 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
       });
 
       bool quotaExceeded = false;
-      int localCount = 0;
 
       // 3. Analyse avec l'IA ou indexation locale
       for (int i = 0; i < toAnalyze.length; i++) {
@@ -124,15 +132,16 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                   : 'Classement local sans IA (${i + 1}/${toAnalyze.length})');
         });
 
+        dynamic processedDoc;
         try {
-          if (quotaExceeded) {
-            await AiClassificationService.instance.processSingleFileLocal(
+          if (quotaExceeded || !hasKey) {
+            processedDoc = await AiClassificationService.instance.processSingleFileLocal(
               file: item.file,
               fileHash: item.fileHash,
             );
-            localCount++;
+            _localCount++;
           } else {
-            await AiClassificationService.instance.processSingleFile(
+            processedDoc = await AiClassificationService.instance.processSingleFile(
               file: item.file,
               fileHash: item.fileHash,
             );
@@ -140,16 +149,28 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
           }
         } on AiQuotaExceededException {
           quotaExceeded = true;
-          localCount++;
+          processedDoc = await AiClassificationService.instance.processSingleFileLocal(
+            file: item.file,
+            fileHash: item.fileHash,
+          );
+          _localCount++;
         } catch (_) {
-          // Si une erreur inattendue survient, on classe le document localement sans le perdre
           try {
-            await AiClassificationService.instance.processSingleFileLocal(
+            processedDoc = await AiClassificationService.instance.processSingleFileLocal(
               file: item.file,
               fileHash: item.fileHash,
             );
-            localCount++;
+            _localCount++;
           } catch (_) {}
+        }
+
+        if (mounted && processedDoc != null) {
+          setState(() {
+            final dom = processedDoc.domainName as String;
+            final sub = processedDoc.subdomainName as String;
+            _domainCounts[dom] = (_domainCounts[dom] ?? 0) + 1;
+            _lastClassifiedInfo = '➔ $dom ($sub)';
+          });
         }
 
         await Future.delayed(const Duration(milliseconds: 100));
@@ -159,7 +180,7 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
         setState(() {
           _isFinished = true;
           if (quotaExceeded) {
-            _status = 'Scan terminé ! Limite de tokens atteinte : vos documents restants ont été rangés localement et seront analysés automatiquement dès que vos tokens se rechargent.';
+            _status = 'Scan terminé ! Limite de débit atteinte : vos documents restants ont été rangés localement et seront analysés automatiquement dès régénération.';
           } else {
             _status = 'Scan et classement terminés avec succès !';
           }
@@ -233,6 +254,29 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (!_hasKey && !_isFinished) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome_outlined, color: Colors.blue.shade800, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Mode sans clé API : classement par thèmes locaux. Pour une analyse IA complète de chaque page, renseignez votre clé Groq ou Gemini dans Paramètres.',
+                          style: TextStyle(fontSize: 11, color: Colors.blue.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               Text(
                 _status,
                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -265,6 +309,24 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                     style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade700),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (_lastClassifiedInfo.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _lastClassifiedInfo,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                   ),
                 ],
               ] else if (!_isFinished) ...[
@@ -338,23 +400,65 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
               if (_isFinished && !_isEmptyResult) ...[
                 const SizedBox(height: 10),
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.green.shade50,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '• $_newAnalyzedCount nouveau(x) document(s) répertorié(s)',
-                        style: TextStyle(fontSize: 13, color: Colors.green.shade900),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '• $_alreadyIndexedCount document(s) déjà présent(s)',
-                        style: TextStyle(fontSize: 13, color: Colors.green.shade900),
-                      ),
+                      if (_newAnalyzedCount > 0)
+                        Text(
+                          '• $_newAnalyzedCount document(s) classé(s) par l\'IA',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                        ),
+                      if (_localCount > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '• $_localCount document(s) classé(s) par thématique locale',
+                          style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+                        ),
+                      ],
+                      if (_alreadyIndexedCount > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '• $_alreadyIndexedCount document(s) déjà présent(s)',
+                          style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+                        ),
+                      ],
+                      if (_domainCounts.isNotEmpty) ...[
+                        const Divider(height: 16),
+                        Text(
+                          'Domaines créés / alimentés :',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _domainCounts.entries.map((entry) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.green.shade300),
+                              ),
+                              child: Text(
+                                '${entry.key} (${entry.value})',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green.shade900,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ],
                   ),
                 ),

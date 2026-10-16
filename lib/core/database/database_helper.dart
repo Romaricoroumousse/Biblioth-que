@@ -193,7 +193,7 @@ class DatabaseHelper {
       ORDER BY doc_count DESC, d.name ASC
     ''';
     final result = await db.rawQuery(query);
-    return result.map((row) => DomainModel.fromMap(row, docCount: row['doc_count'] as int? ?? 0)).toList();
+    return result.map((row) => DomainModel.fromMap(row, docCount: (row['doc_count'] as num?)?.toInt() ?? 0)).toList();
   }
 
   Future<List<SubdomainModel>> getSubdomainsForDomain(int domainId) async {
@@ -209,7 +209,7 @@ class DatabaseHelper {
       ORDER BY doc_count DESC, s.name ASC
     ''';
     final result = await db.rawQuery(query, [domainId]);
-    return result.map((row) => SubdomainModel.fromMap(row, docCount: row['doc_count'] as int? ?? 0)).toList();
+    return result.map((row) => SubdomainModel.fromMap(row, docCount: (row['doc_count'] as num?)?.toInt() ?? 0)).toList();
   }
 
   // ==================== GESTION DES DOCUMENTS ====================

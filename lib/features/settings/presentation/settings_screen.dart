@@ -103,9 +103,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _onKeyChanged(String value) {
-    final detected = UnifiedAiClient.detectProviderFromKey(value);
-    if (detected != _selectedProvider && value.length >= 4) {
+    final trimmed = value.trim();
+    final detected = UnifiedAiClient.detectProviderFromKey(trimmed);
+    if (detected != _selectedProvider && trimmed.length >= 4) {
       _onProviderChanged(detected);
+    }
+    if (trimmed.isNotEmpty) {
+      SecureStorageService.instance.setApiKey(trimmed, provider: _selectedProvider);
     }
   }
 

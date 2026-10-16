@@ -137,8 +137,17 @@ class AiClassificationService {
     }
 
     // 7. Enregistrer avec les résultats de l'IA
-    final domainId = await db.getOrCreateDomain(aiResult.domain, isCustom: true);
-    final subdomainId = await db.getOrCreateSubdomain(domainId, aiResult.subdomain);
+    String finalDomain = aiResult.domain.trim();
+    if (finalDomain.isEmpty) {
+      finalDomain = _inferDomainFromFileName(fileName);
+    }
+    String finalSubdomain = aiResult.subdomain.trim();
+    if (finalSubdomain.isEmpty) {
+      finalSubdomain = 'Général';
+    }
+
+    final domainId = await db.getOrCreateDomain(finalDomain, isCustom: true);
+    final subdomainId = await db.getOrCreateSubdomain(domainId, finalSubdomain);
 
     final completeDoc = DocumentModel(
       id: existingDoc?.id,
@@ -150,8 +159,8 @@ class AiClassificationService {
       modifiedDate: stat.modified.millisecondsSinceEpoch,
       domainId: domainId,
       subdomainId: subdomainId,
-      domainName: aiResult.domain,
-      subdomainName: aiResult.subdomain,
+      domainName: finalDomain,
+      subdomainName: finalSubdomain,
       summary: aiResult.summary,
       keywords: aiResult.keywords,
       language: aiResult.language,
@@ -166,16 +175,20 @@ class AiClassificationService {
     return completeDoc.copyWith(id: id);
   }
 
-  /// Déduction heuristique simple du domaine à partir du nom du fichier
+  /// Déduction heuristique enrichie du domaine à partir du nom du fichier
   String _inferDomainFromFileName(String fileName) {
     final lower = fileName.toLowerCase();
-    if (lower.contains('math') || lower.contains('algebre') || lower.contains('analyse')) return 'Mathématiques';
-    if (lower.contains('info') || lower.contains('prog') || lower.contains('python') || lower.contains('java') || lower.contains('web')) return 'Informatique';
-    if (lower.contains('ia') || lower.contains('ai') || lower.contains('data') || lower.contains('machine learning')) return 'Intelligence Artificielle';
-    if (lower.contains('droit') || lower.contains('juridique') || lower.contains('loi')) return 'Droit';
-    if (lower.contains('eco') || lower.contains('finance') || lower.contains('compta') || lower.contains('gestion')) return 'Économie';
-    if (lower.contains('sante') || lower.contains('med') || lower.contains('bio')) return 'Médecine';
-    if (lower.contains('cours') || lower.contains('tp') || lower.contains('td') || lower.contains('examen')) return 'Documents & Cours';
+    if (lower.contains('math') || lower.contains('algebre') || lower.contains('analyse') || lower.contains('geometrie')) return 'Mathématiques';
+    if (lower.contains('info') || lower.contains('prog') || lower.contains('python') || lower.contains('java') || lower.contains('web') || lower.contains('code') || lower.contains('algo')) return 'Informatique';
+    if (lower.contains('ia') || lower.contains('ai') || lower.contains('data') || lower.contains('machine learning') || lower.contains('deep learning')) return 'Intelligence Artificielle';
+    if (lower.contains('droit') || lower.contains('juridique') || lower.contains('loi') || lower.contains('code civil')) return 'Droit';
+    if (lower.contains('eco') || lower.contains('finance') || lower.contains('compta') || lower.contains('gestion') || lower.contains('banque') || lower.contains('bourse')) return 'Économie & Finance';
+    if (lower.contains('sante') || lower.contains('med') || lower.contains('bio') || lower.contains('anatomie') || lower.contains('pharma')) return 'Médecine & Santé';
+    if (lower.contains('physique') || lower.contains('chimie') || lower.contains('science')) return 'Sciences';
+    if (lower.contains('roman') || lower.contains('litterature') || lower.contains('poesie') || lower.contains('theatre') || lower.contains('livre')) return 'Littérature';
+    if (lower.contains('histoire') || lower.contains('geo') || lower.contains('politique')) return 'Histoire & Géographie';
+    if (lower.contains('anglais') || lower.contains('francais') || lower.contains('espagnol') || lower.contains('langue')) return 'Langues';
+    if (lower.contains('cours') || lower.contains('tp') || lower.contains('td') || lower.contains('examen') || lower.contains('exercice')) return 'Documents & Cours';
     return 'Documents & Cours';
   }
 
