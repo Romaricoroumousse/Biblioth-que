@@ -462,7 +462,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: opt.previewPrimary,
+                                  color: opt.primaryColor,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(color: Colors.black12),
                                 ),

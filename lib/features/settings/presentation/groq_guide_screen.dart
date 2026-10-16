@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/widgets/app_logo.dart';
 
 class GroqGuideScreen extends StatelessWidget {
   const GroqGuideScreen({super.key});
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      // Ignorer si pas de navigateur par défaut
-    }
-  }
 
   void _copyToClipboard(BuildContext context, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
@@ -79,8 +71,8 @@ class GroqGuideScreen extends StatelessWidget {
             title: 'Créer un compte sur console.groq.com',
             content:
                 'Rendez-vous sur le site officiel de Groq. Vous pouvez vous inscrire gratuitement en 1 clic avec votre compte Google ou GitHub.',
-            actionLabel: 'Ouvrir console.groq.com',
-            onAction: () => _launchUrl('https://console.groq.com'),
+            actionLabel: 'Copier l\'adresse du site : console.groq.com',
+            onAction: () => _copyToClipboard(context, 'https://console.groq.com', 'Lien'),
             icon: Icons.person_add_alt_1_rounded,
           ),
 
@@ -96,8 +88,8 @@ class GroqGuideScreen extends StatelessWidget {
                 '2. Cliquez sur le bouton orange "Create API Key".\n'
                 '3. Donnez un nom (ex: "Bibliotheque") et validez.\n'
                 '4. Copiez la clé générée (elle commence par "gsk_...").',
-            actionLabel: 'Accéder directement aux clés API',
-            onAction: () => _launchUrl('https://console.groq.com/keys'),
+            actionLabel: 'Copier le lien des clés : console.groq.com/keys',
+            onAction: () => _copyToClipboard(context, 'https://console.groq.com/keys', 'Lien'),
             icon: Icons.key_rounded,
           ),
 
@@ -118,7 +110,7 @@ class GroqGuideScreen extends StatelessWidget {
                   context,
                   modelName: 'meta-llama/llama-4-scout-17b-16e-instruct',
                   badge: 'Recommandé & Moderne',
-                  description: 'Très intelligent, idéal pour analyser les livres complexes.',
+                  description: 'Très intelligent, idéal pour analyser et classer les livres complexes.',
                 ),
                 const SizedBox(height: 10),
                 _buildModelChoiceRow(
@@ -129,8 +121,8 @@ class GroqGuideScreen extends StatelessWidget {
                 ),
               ],
             ),
-            actionLabel: 'Voir la liste officielle des modèles actifs',
-            onAction: () => _launchUrl('https://console.groq.com/docs/models'),
+            actionLabel: 'Copier le lien des modèles : console.groq.com/docs/models',
+            onAction: () => _copyToClipboard(context, 'https://console.groq.com/docs/models', 'Lien'),
             icon: Icons.tune_rounded,
           ),
 
@@ -211,8 +203,8 @@ class GroqGuideScreen extends StatelessWidget {
               const SizedBox(height: 14),
               OutlinedButton.icon(
                 onPressed: onAction,
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: Text(actionLabel, style: const TextStyle(fontSize: 13)),
+                icon: const Icon(Icons.copy, size: 16),
+                label: Text(actionLabel, style: const TextStyle(fontSize: 12.5)),
               ),
             ],
           ],

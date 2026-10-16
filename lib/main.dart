@@ -32,6 +32,10 @@ class SmartPdfLibraryApp extends StatefulWidget {
   static _SmartPdfLibraryAppState? of(BuildContext context) =>
       context.findAncestorStateOfType<_SmartPdfLibraryAppState>();
 
+  static void updateTheme(BuildContext context, String themeId) {
+    of(context)?.updateTheme(themeId);
+  }
+
   @override
   State<SmartPdfLibraryApp> createState() => _SmartPdfLibraryAppState();
 }

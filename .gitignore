@@ -23,5 +23,8 @@ build/
 *.apk
 Bibliotheque/
 github_token.txt
+track_build.py
+build_and_download.py
+get_failure_logs.py
 
 
