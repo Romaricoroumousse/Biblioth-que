@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../../core/database/database_helper.dart';
 import '../../../core/network/unified_ai_client.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
