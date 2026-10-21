@@ -474,6 +474,19 @@ class DatabaseHelper {
     return res.map((m) => DocumentModel.fromMap(m)).toList();
   }
 
+  Future<List<DocumentModel>> getAllPendingDocuments() async {
+    final db = await instance.database;
+    final res = await db.rawQuery('''
+      SELECT doc.*, d.name as domain_name, s.name as subdomain_name
+      FROM documents doc
+      LEFT JOIN domains d ON doc.domain_id = d.id
+      LEFT JOIN subdomains s ON doc.subdomain_id = s.id
+      WHERE doc.ai_status = 'pending' AND doc.is_excluded = 0
+      ORDER BY doc.created_at DESC
+    ''');
+    return res.map((m) => DocumentModel.fromMap(m)).toList();
+  }
+
   Future<int> countPendingDocuments() async {
     final db = await instance.database;
     final res = await db.rawQuery("SELECT COUNT(*) as count FROM documents WHERE ai_status = 'pending' AND is_excluded = 0");

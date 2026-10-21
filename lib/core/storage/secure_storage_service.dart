@@ -11,7 +11,8 @@ class SecureStorageService {
   SecureStorageService._init() {
     _secureStorage = const FlutterSecureStorage(
       aOptions: AndroidOptions(
-        encryptedSharedPreferences: true,
+        encryptedSharedPreferences: false,
+        resetOnError: true,
       ),
     );
   }
@@ -49,49 +50,56 @@ class SecureStorageService {
     final prov = provider ?? await getActiveProvider();
     final storageKey = '${AppConstants.keyAiApiKey}_$prov';
 
-    try {
-      final key = await _secureStorage.read(key: storageKey);
-      if (key != null && key.trim().isNotEmpty) return key.trim();
-    } catch (e) {
-      debugPrint('Fallback lecture sécurisée vers SharedPreferences: $e');
-    }
-
-    // Fallback SharedPreferences
+    // 1. SharedPreferences en priorité absolue (rapide, mémoire locale, 0 blocage)
     final prefKey = _prefs?.getString(storageKey);
     if (prefKey != null && prefKey.trim().isNotEmpty) return prefKey.trim();
 
-    // Rétrocompatibilité Groq
+    // Rétrocompatibilité Groq dans SharedPreferences
     if (prov == AppConstants.providerGroq) {
-      try {
-        final legacyKey = await _secureStorage.read(key: AppConstants.keyGroqApiKey);
-        if (legacyKey != null && legacyKey.trim().isNotEmpty) return legacyKey.trim();
-      } catch (_) {}
       final legacyPref = _prefs?.getString(AppConstants.keyGroqApiKey);
       if (legacyPref != null && legacyPref.trim().isNotEmpty) return legacyPref.trim();
     }
 
-    // Si aucune clé trouvée pour ce fournisseur : recherche globale sur tous les fournisseurs
-    for (final p in AppConstants.supportedProviders) {
-      final altKey = '${AppConstants.keyAiApiKey}_${p.id}';
+    final currentActive = _prefs?.getString('current_active_api_key');
+    if (currentActive != null && currentActive.trim().isNotEmpty) return currentActive.trim();
+
+    // 2. Vérification dans FlutterSecureStorage avec timeout de sécurité
+    try {
+      final key = await _secureStorage.read(key: storageKey).timeout(const Duration(milliseconds: 800));
+      if (key != null && key.trim().isNotEmpty) {
+        // Synchroniser vers SharedPreferences pour les prochains accès
+        await _prefs?.setString(storageKey, key.trim());
+        return key.trim();
+      }
+    } catch (_) {}
+
+    // Rétrocompatibilité Groq dans SecureStorage
+    if (prov == AppConstants.providerGroq) {
       try {
-        final altVal = await _secureStorage.read(key: altKey);
-        if (altVal != null && altVal.trim().isNotEmpty) {
-          await setActiveProvider(p.id);
-          return altVal.trim();
+        final legacyKey = await _secureStorage.read(key: AppConstants.keyGroqApiKey).timeout(const Duration(milliseconds: 800));
+        if (legacyKey != null && legacyKey.trim().isNotEmpty) {
+          await _prefs?.setString(AppConstants.keyGroqApiKey, legacyKey.trim());
+          return legacyKey.trim();
         }
       } catch (_) {}
+    }
+
+    // 3. Si aucune clé trouvée pour ce fournisseur : recherche globale sur tous les fournisseurs
+    for (final p in AppConstants.supportedProviders) {
+      final altKey = '${AppConstants.keyAiApiKey}_${p.id}';
       final altPref = _prefs?.getString(altKey);
       if (altPref != null && altPref.trim().isNotEmpty) {
         await setActiveProvider(p.id);
         return altPref.trim();
       }
-    }
-
-    // Vérifier aussi la clé legacy générale
-    final anyLegacy = _prefs?.getString(AppConstants.keyGroqApiKey);
-    if (anyLegacy != null && anyLegacy.trim().isNotEmpty) {
-      await setActiveProvider(AppConstants.providerGroq);
-      return anyLegacy.trim();
+      try {
+        final altVal = await _secureStorage.read(key: altKey).timeout(const Duration(milliseconds: 500));
+        if (altVal != null && altVal.trim().isNotEmpty) {
+          await setActiveProvider(p.id);
+          await _prefs?.setString(altKey, altVal.trim());
+          return altVal.trim();
+        }
+      } catch (_) {}
     }
 
     return null;
@@ -104,20 +112,31 @@ class SecureStorageService {
     final storageKey = '${AppConstants.keyAiApiKey}_$prov';
     final cleaned = apiKey.trim();
 
-    try {
-      await _secureStorage.write(key: storageKey, value: cleaned);
-    } catch (e) {
-      debugPrint('Fallback écriture sécurisée: $e');
+    // Sauvegarder immédiatement dans SharedPreferences (synchrone et persistant)
+    if (cleaned.isNotEmpty) {
+      await _prefs?.setString(storageKey, cleaned);
+      await _prefs?.setString('current_active_api_key', cleaned);
+
+      if (prov == AppConstants.providerGroq || cleaned.startsWith('gsk_')) {
+        await _prefs?.setString(AppConstants.keyGroqApiKey, cleaned);
+        await _prefs?.setString('${AppConstants.keyAiApiKey}_groq', cleaned);
+      }
+    } else {
+      await _prefs?.remove(storageKey);
     }
 
-    // Également dans SharedPreferences pour robustesse
-    await _prefs?.setString(storageKey, cleaned);
-
-    if (prov == AppConstants.providerGroq) {
-      try {
-        await _secureStorage.write(key: AppConstants.keyGroqApiKey, value: cleaned);
-      } catch (_) {}
-      await _prefs?.setString(AppConstants.keyGroqApiKey, cleaned);
+    // Sauvegarde secondaire dans SecureStorage sans bloquer
+    try {
+      if (cleaned.isNotEmpty) {
+        await _secureStorage.write(key: storageKey, value: cleaned).timeout(const Duration(seconds: 1));
+        if (prov == AppConstants.providerGroq || cleaned.startsWith('gsk_')) {
+          await _secureStorage.write(key: AppConstants.keyGroqApiKey, value: cleaned).timeout(const Duration(seconds: 1));
+        }
+      } else {
+        await _secureStorage.delete(key: storageKey).timeout(const Duration(seconds: 1));
+      }
+    } catch (e) {
+      debugPrint('Note: écriture SecureStorage secondaire: $e');
     }
   }
 

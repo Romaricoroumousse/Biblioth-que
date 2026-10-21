@@ -7,6 +7,7 @@ import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/widgets/app_logo.dart';
 import '../../../services/ai_classification_service.dart';
 import '../../../services/pdf_scanner_service.dart';
+import 'ai_classification_dialog.dart';
 
 class ScanProgressDialog extends StatefulWidget {
   final VoidCallback onFinished;
@@ -27,20 +28,28 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
   int _current = 0;
   int _total = 0;
   String _currentFileName = '';
-  String _lastClassifiedInfo = '';
   bool _isFinished = false;
   bool _isEmptyResult = false;
   bool _isCancelled = false;
   bool _hasKey = false;
-  int _newAnalyzedCount = 0;
+  int _newIndexedCount = 0;
   int _alreadyIndexedCount = 0;
-  int _localCount = 0;
-  final Map<String, int> _domainCounts = {};
+  int _pendingCount = 0;
 
   @override
   void initState() {
     super.initState();
     _startScanProcess();
+  }
+
+  void _openAiClassification() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AiClassificationDialog(
+        onFinished: widget.onFinished,
+      ),
+    );
   }
 
   Future<void> _startScanProcess({List<File>? specificFiles}) async {
@@ -50,10 +59,9 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
       _isEmptyResult = false;
       _current = 0;
       _total = 0;
-      _newAnalyzedCount = 0;
-      _localCount = 0;
-      _domainCounts.clear();
-      _lastClassifiedInfo = '';
+      _newIndexedCount = 0;
+      _alreadyIndexedCount = 0;
+      _pendingCount = 0;
       _hasKey = hasKey;
       _status = 'Recherche des fichiers PDF sur votre appareil...';
     });
@@ -76,7 +84,7 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
       }
 
       setState(() {
-        _status = 'Vérification des empreintes (${files.length} PDF trouvés)...';
+        _status = 'Vérification et répertoriation (${files.length} PDF trouvés)...';
       });
 
       // 2. Inspection des doublons et des documents déjà analysés
@@ -94,95 +102,53 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
 
       if (_isCancelled) return;
 
-      final toAnalyze = candidates.where((c) => !c.isAlreadyIndexed).toList();
+      final toIndex = candidates.where((c) => !c.isAlreadyIndexed).toList();
       _alreadyIndexedCount = candidates.where((c) => c.isAlreadyIndexed).length;
 
-      if (toAnalyze.isEmpty) {
+      // 3. Répertoire rapide de tous les nouveaux PDF dans SQLite
+      int newlyAdded = 0;
+      if (toIndex.isNotEmpty) {
         setState(() {
-          _status = 'Tous les documents PDF sont déjà répertoriés et à jour !';
-          _isFinished = true;
-        });
-        return;
-      }
-
-      final providerName = await SecureStorageService.instance.getActiveProviderName();
-
-      setState(() {
-        _current = 0;
-        _total = toAnalyze.length;
-        _status = hasKey
-            ? 'Classification avec $providerName (${toAnalyze.length} documents)...'
-            : 'Indexation locale (${toAnalyze.length} documents)...';
-      });
-
-      bool quotaExceeded = false;
-
-      // 3. Analyse avec l'IA ou indexation locale
-      for (int i = 0; i < toAnalyze.length; i++) {
-        if (_isCancelled) break;
-
-        final item = toAnalyze[i];
-        setState(() {
-          _current = i + 1;
-          _currentFileName = item.fileName;
-          _status = quotaExceeded
-              ? 'Tokens épuisés (recharge en 1 min) : Classement local (${i + 1}/${toAnalyze.length})'
-              : (hasKey
-                  ? 'Classification avec $providerName (${i + 1}/${toAnalyze.length})'
-                  : 'Classement local sans IA (${i + 1}/${toAnalyze.length})');
+          _current = 0;
+          _total = toIndex.length;
+          _status = 'Enregistrement dans la bibliothèque (${toIndex.length} documents)...';
         });
 
-        dynamic processedDoc;
-        try {
-          if (quotaExceeded || !hasKey) {
-            processedDoc = await AiClassificationService.instance.processSingleFileLocal(
-              file: item.file,
-              fileHash: item.fileHash,
-            );
-            _localCount++;
-          } else {
-            processedDoc = await AiClassificationService.instance.processSingleFile(
-              file: item.file,
-              fileHash: item.fileHash,
-            );
-            _newAnalyzedCount++;
-          }
-        } on AiQuotaExceededException {
-          quotaExceeded = true;
-          processedDoc = await AiClassificationService.instance.processSingleFileLocal(
-            file: item.file,
-            fileHash: item.fileHash,
-          );
-          _localCount++;
-        } catch (_) {
+        for (int i = 0; i < toIndex.length; i++) {
+          if (_isCancelled) break;
+          final item = toIndex[i];
+          setState(() {
+            _current = i + 1;
+            _currentFileName = item.fileName;
+            _status = 'Répertoire du document (${i + 1}/${toIndex.length}) : ${item.fileName}';
+          });
+
           try {
-            processedDoc = await AiClassificationService.instance.processSingleFileLocal(
-              file: item.file,
-              fileHash: item.fileHash,
-            );
-            _localCount++;
+            final existing = await DatabaseHelper.instance.getDocumentByHash(item.fileHash);
+            if (existing == null) {
+              await AiClassificationService.instance.processSingleFileLocal(
+                file: item.file,
+                fileHash: item.fileHash,
+              );
+              newlyAdded++;
+            }
           } catch (_) {}
         }
-
-        if (mounted && processedDoc != null) {
-          setState(() {
-            final dom = processedDoc.domainName as String;
-            final sub = processedDoc.subdomainName as String;
-            _domainCounts[dom] = (_domainCounts[dom] ?? 0) + 1;
-            _lastClassifiedInfo = '➔ $dom ($sub)';
-          });
-        }
-
-        await Future.delayed(const Duration(milliseconds: 100));
       }
+
+      final pending = await DatabaseHelper.instance.countPendingDocuments();
 
       if (mounted) {
         setState(() {
+          _newIndexedCount = newlyAdded;
+          _pendingCount = pending;
           _isFinished = true;
-          if (quotaExceeded) {
-            _status = 'Scan terminé ! Limite de débit atteinte : vos documents restants ont été rangés localement et seront analysés automatiquement dès régénération.';
+          if (_newIndexedCount > 0) {
+            _status = '🎉 Scan terminé ! $_newIndexedCount nouveau(x) document(s) répertorié(s).';
+          } else if (_pendingCount > 0) {
+            _status = 'Tous vos PDF sont répertoriés ($_pendingCount prêt(s) pour le classement).';
           } else {
-            _status = 'Scan et classement terminés avec succès !';
+            _status = 'Tous vos documents sont répertoriés et classés à jour !';
           }
         });
       }
@@ -192,6 +158,9 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
           _status = 'Erreur lors du scan : $e';
           _isFinished = true;
         });
+      }
+    }
+  }
       }
     }
   }
@@ -404,24 +373,26 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: Colors.green.shade200),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_newAnalyzedCount > 0)
-                        Text(
-                          '• $_newAnalyzedCount document(s) classé(s) par l\'IA',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green.shade900),
-                        ),
-                      if (_localCount > 0) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '• $_localCount document(s) classé(s) par thématique locale',
-                          style: TextStyle(fontSize: 12, color: Colors.green.shade800),
-                        ),
-                      ],
+                      Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.green, size: 22),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _newIndexedCount > 0
+                                  ? '$_newIndexedCount nouveau(x) document(s) répertorié(s)'
+                                  : 'Documents à jour dans la bibliothèque',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
                       if (_alreadyIndexedCount > 0) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -429,36 +400,13 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                           style: TextStyle(fontSize: 12, color: Colors.green.shade800),
                         ),
                       ],
-                      if (_domainCounts.isNotEmpty) ...[
-                        const Divider(height: 16),
-                        Text(
-                          'Domaines créés / alimentés :',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade900),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: _domainCounts.entries.map((entry) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.green.shade300),
-                              ),
-                              child: Text(
-                                '${entry.key} (${entry.value})',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.green.shade900,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
+                      const Divider(height: 16),
+                      Text(
+                        _newIndexedCount > 0 || _pendingCount > 0
+                            ? 'Vos documents sont répertoriés. Cliquez sur "Classer par IA" pour créer vos domaines thématiques et sous-domaines automatiquement !'
+                            : 'Tous vos documents sont déjà répertoriés et classés.',
+                        style: TextStyle(fontSize: 12, color: Colors.green.shade900, height: 1.3),
+                      ),
                     ],
                   ),
                 ),
@@ -476,14 +424,38 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
               },
               child: const Text('Arrêter'),
             ),
-          if (_isFinished)
-            ElevatedButton(
+          if (_isFinished) ...[
+            TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
                 widget.onFinished();
               },
-              child: const Text('Fermer'),
+              child: const Text('Voir la bibliothèque'),
             ),
+            if (_newIndexedCount > 0 || _pendingCount > 0)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  widget.onFinished();
+                  _openAiClassification();
+                },
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: Text(
+                  _newIndexedCount > 0
+                      ? 'Classer par IA ($_newIndexedCount)'
+                      : 'Classer par IA ($_pendingCount)',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              )
+            else
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  widget.onFinished();
+                },
+                child: const Text('Fermer'),
+              ),
+          ],
         ],
       ),
     );

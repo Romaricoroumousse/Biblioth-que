@@ -104,13 +104,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _onKeyChanged(String value) {
     final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+
     final detected = UnifiedAiClient.detectProviderFromKey(trimmed);
     if (detected != _selectedProvider && trimmed.length >= 4) {
-      _onProviderChanged(detected);
+      final info = AppConstants.supportedProviders.firstWhere(
+        (p) => p.id == detected,
+        orElse: () => AppConstants.supportedProviders.first,
+      );
+      setState(() {
+        _selectedProvider = detected;
+        _selectedModel = info.defaultModel;
+        _modelController.text = info.defaultModel;
+      });
+      SecureStorageService.instance.setActiveProvider(detected);
     }
-    if (trimmed.isNotEmpty) {
-      SecureStorageService.instance.setApiKey(trimmed, provider: _selectedProvider);
+    // Sauvegarder immédiatement et de manière synchrone
+    SecureStorageService.instance.setApiKey(trimmed, provider: _selectedProvider);
+    setState(() {
+      _isKeyValid = true;
+      _keyTestMessage = '✅ Clé sauvegardée automatiquement';
+    });
+  }
+
+  Future<void> _saveApiKeyDirectly() async {
+    final key = _apiKeyController.text.trim();
+    final model = _modelController.text.trim().isNotEmpty
+        ? _modelController.text.trim()
+        : AppConstants.supportedProviders.firstWhere((p) => p.id == _selectedProvider).defaultModel;
+    final storage = SecureStorageService.instance;
+
+    await storage.setActiveProvider(_selectedProvider);
+    await storage.setApiKey(key, provider: _selectedProvider);
+    await storage.setSelectedModel(model, provider: _selectedProvider);
+    if (_selectedProvider == AppConstants.providerCustom) {
+      await storage.setCustomEndpoint(_endpointController.text.trim());
     }
+
+    if (!mounted) return;
+    setState(() {
+      _isKeyValid = key.isNotEmpty;
+      _keyTestMessage = '✅ Clé sauvegardée définitivement pour l\'application !';
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ Clé API sauvegardée définitivement dans l\'appareil !'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _saveAndTestApiKey() async {
@@ -119,6 +162,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ? _modelController.text.trim()
         : AppConstants.supportedProviders.firstWhere((p) => p.id == _selectedProvider).defaultModel;
     final storage = SecureStorageService.instance;
+
+    // Sauvegarder d'abord sans attendre le résultat du test
+    await storage.setActiveProvider(_selectedProvider);
+    await storage.setApiKey(key, provider: _selectedProvider);
+    await storage.setSelectedModel(model, provider: _selectedProvider);
+    if (_selectedProvider == AppConstants.providerCustom) {
+      await storage.setCustomEndpoint(_endpointController.text.trim());
+    }
 
     setState(() {
       _selectedModel = model;
@@ -141,13 +192,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _testMessageFromResult(res);
     });
 
-    // Enregistrer quoi qu'il arrive si l'utilisateur le souhaite
-    await storage.setActiveProvider(_selectedProvider);
-    await storage.setApiKey(key, provider: _selectedProvider);
-    await storage.setSelectedModel(model, provider: _selectedProvider);
-    if (_selectedProvider == AppConstants.providerCustom) {
-      await storage.setCustomEndpoint(_endpointController.text.trim());
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res.isValid ? '✅ Clé API valide et connectée !' : '⚠️ Clé enregistrée (Statut: ${res.message})'),
+        backgroundColor: res.isValid ? Colors.green : Colors.orange.shade800,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   void _testMessageFromResult(AiTestResult res) {
@@ -409,10 +460,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Row(
                           children: [
                             Expanded(
+                              flex: 3,
                               child: ElevatedButton.icon(
+                                onPressed: _saveApiKeyDirectly,
+                                icon: const Icon(Icons.check_circle_outline, size: 18),
+                                label: const Text('Sauvegarder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade700,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 3,
+                              child: OutlinedButton.icon(
                                 onPressed: _isTestingKey ? null : _saveAndTestApiKey,
-                                icon: const Icon(Icons.save, size: 18),
-                                label: const Text('Tester & Sauvegarder', style: TextStyle(fontSize: 13)),
+                                icon: _isTestingKey
+                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Icon(Icons.network_check_rounded, size: 18),
+                                label: const Text('Tester', style: TextStyle(fontSize: 13)),
                               ),
                             ),
                             if (_apiKeyController.text.isNotEmpty) ...[

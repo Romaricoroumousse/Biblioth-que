@@ -9,6 +9,7 @@ import '../../../models/document_model.dart';
 import '../../../models/domain_model.dart';
 import '../../../services/ai_classification_service.dart';
 import '../../../services/pdf_scanner_service.dart';
+import '../../scanner/presentation/ai_classification_dialog.dart';
 import '../../scanner/presentation/pre_scan_config_dialog.dart';
 import '../../scanner/presentation/scan_dialog.dart';
 import '../../search/presentation/smart_search_screen.dart';
@@ -261,6 +262,19 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
     );
   }
 
+  void _triggerAiClassificationDialog({List<DocumentModel>? targetDocs}) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AiClassificationDialog(
+        targetDocuments: targetDocs,
+        onFinished: () {
+          _loadLibraryData();
+        },
+      ),
+    );
+  }
+
   Future<void> _toggleFavorite(DocumentModel doc) async {
     final updated = doc.copyWith(isFavorite: !doc.isFavorite);
     if (updated.id != null) {
@@ -286,6 +300,16 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
           ],
         ),
         actions: [
+          IconButton(
+            icon: Badge(
+              isLabelVisible: _pendingCount > 0,
+              label: Text('$_pendingCount'),
+              backgroundColor: Colors.amber.shade900,
+              child: const Icon(Icons.auto_awesome_rounded),
+            ),
+            tooltip: 'Classer les PDF avec l\'IA',
+            onPressed: () => _triggerAiClassificationDialog(),
+          ),
           IconButton(
             icon: const Icon(Icons.search_rounded),
             tooltip: 'Recherche intelligente',
@@ -329,33 +353,59 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
               },
               child: Column(
                 children: [
-                  // Bandeau d'information chaleureux si des documents attendent l'IA
+                  // Bandeau héroïque bien visible quand des documents sont en attente de classement IA
                   if (_pendingCount > 0)
                     Container(
-                      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+                        gradient: LinearGradient(
+                          colors: [
+                            theme.colorScheme.primary.withOpacity(0.12),
+                            theme.colorScheme.secondary.withOpacity(0.06),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              '$_pendingCount document(s) rangé(s) localement. Analyse IA disponible.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w600,
+                          Row(
+                            children: [
+                              Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '$_pendingCount document(s) répertorié(s) prêt(s) pour l\'IA',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                          TextButton(
-                            onPressed: _handleScanRequest,
-                            child: const Text('Analyser', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Vos documents sont répertoriés. Cliquez ci-dessous pour lancer l\'analyse IA et créer vos domaines thématiques automatiquement.',
+                            style: TextStyle(fontSize: 12, color: Colors.black87),
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton.icon(
+                            onPressed: () => _triggerAiClassificationDialog(),
+                            icon: const Icon(Icons.psychology, size: 18),
+                            label: Text(
+                              'Classer maintenant avec l\'IA ($_pendingCount)',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(42),
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
                           ),
                         ],
                       ),
@@ -387,6 +437,7 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
     final activeDomains = _domains.where((d) => d.documentCount > 0).toList();
 
     if (activeDomains.isEmpty) {
+      final hasDocs = _recentDocs.isNotEmpty || _pendingCount > 0;
       return Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
@@ -395,36 +446,62 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
             children: [
               const AppLogo(size: 76),
               const SizedBox(height: 20),
-              const Text(
-                'Votre bibliothèque est prête',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Text(
+                hasDocs
+                    ? '${_recentDocs.length} PDF répertorié(s)'
+                    : 'Votre bibliothèque est prête',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               Text(
-                'Rangez, organisez et retrouvez tous vos livres et cours PDF en un clin d\'œil.\nL\'application fonctionne 100% hors-ligne après classement !',
+                hasDocs
+                    ? 'Vos documents PDF sont enregistrés dans votre bibliothèque.\nCliquez sur "Classer avec l\'IA" pour créer vos domaines thématiques automatiquement.'
+                    : 'Rangez, organisez et retrouvez tous vos livres et cours PDF en un clin d\'œil.\nL\'application fonctionne 100% hors-ligne après classement !',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade700, height: 1.45, fontSize: 13.5),
               ),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _handleScanRequest,
-                icon: const Icon(Icons.sync_rounded),
-                label: const Text('Détecter et classer mes PDF'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              if (hasDocs) ...[
+                ElevatedButton.icon(
+                  onPressed: () => _triggerAiClassificationDialog(),
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('✨ Classer avec l\'IA maintenant'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _pickAndScanCustomFiles,
-                icon: const Icon(Icons.file_upload_outlined),
-                label: const Text('Sélectionner des PDF manuellement'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _handleScanRequest,
+                  icon: const Icon(Icons.sync_rounded),
+                  label: const Text('Re-scanner les dossiers'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
-              ),
+              ] else ...[
+                ElevatedButton.icon(
+                  onPressed: _handleScanRequest,
+                  icon: const Icon(Icons.sync_rounded),
+                  label: const Text('Détecter et répertorier mes PDF'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _pickAndScanCustomFiles,
+                  icon: const Icon(Icons.file_upload_outlined),
+                  label: const Text('Sélectionner des PDF manuellement'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
