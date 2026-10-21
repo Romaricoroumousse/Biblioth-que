@@ -161,9 +161,6 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
       }
     }
   }
-      }
-    }
-  }
 
   Future<void> _pickAndScanFiles() async {
     final result = await FilePicker.platform.pickFiles(
