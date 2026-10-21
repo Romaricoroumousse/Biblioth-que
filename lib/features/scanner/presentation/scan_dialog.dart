@@ -280,24 +280,6 @@ class _ScanProgressDialogState extends State<ScanProgressDialog> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                if (_lastClassifiedInfo.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      _lastClassifiedInfo,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ],
               ] else if (!_isFinished) ...[
                 const Center(child: CircularProgressIndicator()),
               ],
