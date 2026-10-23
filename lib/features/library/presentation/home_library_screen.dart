@@ -42,7 +42,6 @@ class _HomeLibraryScreenState extends State<HomeLibraryScreen>
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
     _loadLibraryData();
-    _quickAutoScanNewDocuments();
   }
 
   @override

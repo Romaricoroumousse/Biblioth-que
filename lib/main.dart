@@ -7,11 +7,65 @@ import 'features/onboarding/presentation/onboarding_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SecureStorageService.instance.init();
 
-  // L'application s'ouvre même sans clé API !
-  final bool onboardingDone = await SecureStorageService.instance.isOnboardingCompleted();
-  final String savedTheme = await SecureStorageService.instance.getSelectedTheme();
+  // Protection contre tout écran noir en mode release
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFFFAF7F2),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.menu_book_rounded, color: Color(0xFF8D4925), size: 64),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Bibliothèque PDF',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2C1810)),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Initialisation de la bibliothèque...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        // Relancer sur l'accueil en cas de bug passager
+                        main();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF8D4925),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Actualiser l\'application'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
+  bool onboardingDone = false;
+  String savedTheme = AppConstants.themeClassicWarm;
+
+  try {
+    await SecureStorageService.instance.init();
+    onboardingDone = await SecureStorageService.instance.isOnboardingCompleted();
+    savedTheme = await SecureStorageService.instance.getSelectedTheme();
+  } catch (e, stack) {
+    debugPrint('Initialisation sécurisée en mode secours: $e\n$stack');
+  }
 
   runApp(SmartPdfLibraryApp(
     initialReady: onboardingDone,
